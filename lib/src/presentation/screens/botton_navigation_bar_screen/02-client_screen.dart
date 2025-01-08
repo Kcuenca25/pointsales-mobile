@@ -70,7 +70,7 @@ class _ClientScreenState extends State<ClientScreen> {
         ),
       ),
       bottomNavigationBar: CustomCircleNavBar(
-        selectedIndex: 1, // Ajusta este valor según corresponda
+        selectedIndex: 1, 
         onItemTapped: (index) {
           switch (index) {
             case 0:
