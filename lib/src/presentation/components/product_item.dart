@@ -67,9 +67,8 @@ class _ProductItemState extends State<ProductItem> {
               Row(
   mainAxisAlignment: MainAxisAlignment.center,
   children: [
-    // Botón de remover
     Container(
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         color: Colors.blueAccent,
         shape: BoxShape.circle,
       ),
@@ -91,17 +90,16 @@ class _ProductItemState extends State<ProductItem> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(20), // Bordes redondeados
+        borderRadius: BorderRadius.circular(20), 
       ),
       child: Text(
         widget.product.quantity.toString(),
         style: const TextStyle(color: Colors.black, fontSize: 18, fontWeight: FontWeight.bold),
       ),
     ),
-    const SizedBox(width: 8), // Espaciado entre los elementos
-    // Botón de añadir
+    const SizedBox(width: 8),
     Container(
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         color: Colors.blueAccent,
         shape: BoxShape.circle,
       ),

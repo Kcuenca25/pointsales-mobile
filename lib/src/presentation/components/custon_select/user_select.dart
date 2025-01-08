@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 class UserSelect extends StatefulWidget {
   final Function(User) onUserSelected;
 
-  UserSelect({required this.onUserSelected});
+  const UserSelect({super.key, required this.onUserSelected});
 
   @override
   _UserSelectState createState() => _UserSelectState();
@@ -31,7 +31,7 @@ class _UserSelectState extends State<UserSelect> {
       });
     } catch (e) {
       print('Error al cargar los usuarios: $e');
-      // Manejo de errores adecuado aquí
+      
     }
   }
 
@@ -82,7 +82,7 @@ class _UserSelectState extends State<UserSelect> {
             ),
             child: ListView.builder(
               shrinkWrap: true,
-              physics: NeverScrollableScrollPhysics(),
+              physics: const NeverScrollableScrollPhysics(),
               itemCount: users.length,
               itemBuilder: (context, index) {
                 return ListTile(

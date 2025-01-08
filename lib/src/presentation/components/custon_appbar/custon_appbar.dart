@@ -46,7 +46,7 @@ class CustonAppBar extends StatelessWidget {
           ignorePointer: false,
           onTap: () {},
           badgeContent: const Text(
-            '3', // Número que se muestra en el badge
+            '3', 
             style: TextStyle(color: Colors.white, fontSize: 10),
           ),
           badgeAnimation: const badges.BadgeAnimation.scale(

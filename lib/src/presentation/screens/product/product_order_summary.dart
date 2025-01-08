@@ -101,7 +101,7 @@ class OrderSummary extends StatelessWidget {
               child: Center(
                 child: Text(
                   'Total: \$${totalPrice.toStringAsFixed(2)}',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
               ),
             ),
@@ -119,7 +119,6 @@ class OrderSummary extends StatelessWidget {
       bottomNavigationBar: CustomCircleNavBar(
         selectedIndex: 2, // Cambia según la posición de esta pantalla
         onItemTapped: (index) {
-          // Lógica para navegar a la pantalla correspondiente
           if (index == 0) {
             Navigator.pushReplacementNamed(context, '/home');
           } else if (index == 1) {
@@ -127,7 +126,6 @@ class OrderSummary extends StatelessWidget {
           } else if (index == 2) {
             Navigator.pushReplacementNamed(context, '/products');
           }
-          // Agrega más navegación según tus pantallas
         },
       ),
     );

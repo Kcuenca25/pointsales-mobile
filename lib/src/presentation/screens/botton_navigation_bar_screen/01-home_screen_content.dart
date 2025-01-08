@@ -1,11 +1,15 @@
 import 'package:ecomerce_app/src/data/api_repository/api_repository.dart';
 import 'package:ecomerce_app/src/domain/models/users_model.dart';
+import 'package:ecomerce_app/src/presentation/components/contact_list.dart';
 import 'package:ecomerce_app/src/presentation/components/custon_appbar/custon_appbar.dart';
 import 'package:ecomerce_app/src/presentation/components/custon_cards/custon_cards.dart';
-import 'package:ecomerce_app/src/presentation/components/contact_list.dart';
 import 'package:flutter/material.dart';
 
 class HomeScreenContent extends StatefulWidget {
+  final Function(User) onUserPageNavigate;
+
+  const HomeScreenContent({Key? key, required this.onUserPageNavigate}) : super(key: key);
+
   @override
   _HomeScreenContentState createState() => _HomeScreenContentState();
 }
@@ -50,7 +54,10 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                     }
 
                     final users = snapshot.data!;
-                    return ContactList(users: users); // Asegúrate de pasar List<User>
+                    return ContactList(
+                      users: users,
+                      onUserSelected: widget.onUserPageNavigate,
+                    );
                   },
                 ),
               ],

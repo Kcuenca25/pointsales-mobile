@@ -19,10 +19,10 @@ class SuccessfullScreen extends StatelessWidget {
           ),
         ),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.end, // Alinea el contenido al final
+          mainAxisAlignment: MainAxisAlignment.end, 
           children: [
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 20.0), // Espaciado vertical
+              padding: const EdgeInsets.symmetric(vertical: 20.0), 
               child: ElevatedButton(
                 onPressed: () {
                   Navigator.pushNamed(
@@ -33,8 +33,8 @@ class SuccessfullScreen extends StatelessWidget {
                 },
                 style: ElevatedButton.styleFrom(
                   foregroundColor: Colors.white,
-                  backgroundColor: Colors.blue, // Color del botón
-                  minimumSize: const Size(double.infinity, 65), // Tamaño del botón (largo de izquierda a derecha y altura ajustada)
+                  backgroundColor: Colors.blue, 
+                  minimumSize: const Size(double.infinity, 65), 
                 ),
                 child: const Text(
                   'Ir a Historial de Compras',
@@ -46,9 +46,8 @@ class SuccessfullScreen extends StatelessWidget {
         ),
       ),
       bottomNavigationBar: CustomCircleNavBar(
-        selectedIndex: 2, // Cambia según la posición de esta pantalla
+        selectedIndex: 2, 
         onItemTapped: (index) {
-          // Lógica para navegar a la pantalla correspondiente
           if (index == 0) {
             Navigator.pushReplacementNamed(context, '/home');
           } else if (index == 1) {
@@ -56,9 +55,8 @@ class SuccessfullScreen extends StatelessWidget {
           } else if (index == 2) {
             Navigator.pushReplacementNamed(context, '/products');
           } else if (index == 3) {
-            Navigator.pushReplacementNamed(context, '/purchase_history'); // Asegúrate de que esta ruta esté definida
+            Navigator.pushReplacementNamed(context, '/purchase_history'); 
           }
-          // Agrega más navegación según tus pantallas
         },
       ),
     );

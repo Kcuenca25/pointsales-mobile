@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:ecomerce_app/src/presentation/components/custon_bar_row/custon_bar_row.dart';
-import 'package:ecomerce_app/src/presentation/screens/product/product_list.dart';
 import 'package:flutter/material.dart';
 import 'package:ecomerce_app/src/domain/models/users_model.dart';
 import 'package:ecomerce_app/src/presentation/components/custon_appbar/custon_appbar.dart';
@@ -11,8 +10,9 @@ import 'package:ecomerce_app/src/presentation/components/botton_navigation_bar/c
 
 class CarShopScreen extends StatefulWidget {
   final int selectedIndex;
+  final Function(User) onProductListNavigate;
 
-  const CarShopScreen({super.key, this.selectedIndex = 2});
+  const CarShopScreen({super.key, this.selectedIndex = 2, required this.onProductListNavigate});
 
   @override
   State<CarShopScreen> createState() => _CarShopScreenState();
@@ -69,7 +69,7 @@ class _CarShopScreenState extends State<CarShopScreen> with WidgetsBindingObserv
     _subscription?.cancel();
     _subscription = null;
     await controller.dispose();
-    super.dispose();
+    super.dispose(); 
   }
 
   @override
@@ -81,13 +81,14 @@ class _CarShopScreenState extends State<CarShopScreen> with WidgetsBindingObserv
           children: [
             const CustonAppBar(),
             const SizedBox(height: 20),
-            CustomBarRow( 
-                title: 'Escanear productos',
-                onBackButtonPressed: () {
-                  Navigator.pop(context);
-                },
-                backgroundColor: Colors.blueAccent, textColor: Colors.black,
-              ),
+            CustomBarRow(
+              title: 'Escanear productos',
+              onBackButtonPressed: () {
+                Navigator.pop(context);
+              },
+              backgroundColor: Colors.blueAccent,
+              textColor: Colors.black,
+            ),
             const SizedBox(height: 10),
             UserSelect(
               onUserSelected: (user) {
@@ -125,15 +126,10 @@ class _CarShopScreenState extends State<CarShopScreen> with WidgetsBindingObserv
               text: 'Añadir producto manual',
               onPressed: () {
                 if (selectedUser != null) {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => ProductList(selectedUser: selectedUser!),
-                    ),
-                  );
+                  widget.onProductListNavigate(selectedUser!);
                 } else {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Por favor, selecciona un usuario')),
+                    const SnackBar(content: Text('Por favor, selecciona un usuario')),
                   );
                 }
               },
@@ -142,14 +138,14 @@ class _CarShopScreenState extends State<CarShopScreen> with WidgetsBindingObserv
         ),
       ),
       bottomNavigationBar: CustomCircleNavBar(
-        selectedIndex: widget.selectedIndex, // Asegura que el item 2 esté seleccionado
+        selectedIndex: widget.selectedIndex,
         onItemTapped: (index) {
           switch (index) {
             case 0:
-              Navigator.pushReplacementNamed(context, '/home');
+              Navigator.pushReplacementNamed(context, '/home_screen');
               break;
             case 1:
-              Navigator.pushReplacementNamed(context, '/users');
+              Navigator.pushReplacementNamed(context, '/client_screen');
               break;
             case 2:
               Navigator.pushReplacementNamed(context, '/car_shop_screen');

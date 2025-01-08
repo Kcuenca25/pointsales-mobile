@@ -1,28 +1,28 @@
 import 'package:ecomerce_app/src/domain/models/users_model.dart';
-import 'package:ecomerce_app/src/presentation/screens/user/user_page.dart';
 import 'package:flutter/material.dart';
 
 class ContactList extends StatelessWidget {
-  final List<User> users; // Cambia a List<User>
+  final List<User> users; 
+  final Function(User) onUserSelected; 
 
-  ContactList({required this.users}); // Cambia el nombre del parámetro
+  const ContactList({required this.users, required this.onUserSelected, super.key});
 
   @override
   Widget build(BuildContext context) {
     return ListView.builder(
       shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(), // Evitar el desplazamiento adicional
-      itemCount: users.length, // Usa users en lugar de user
+      physics: const NeverScrollableScrollPhysics(), 
+      itemCount: users.length, 
       itemBuilder: (context, index) {
-        final usuario = users[index]; // Usa users aquí
+        final usuario = users[index]; 
         return ListTile(
           contentPadding: const EdgeInsets.symmetric(vertical: 10.0),
           leading: ClipRRect(
-            borderRadius: BorderRadius.circular(8.0), // Bordes redondeados
+            borderRadius: BorderRadius.circular(8.0),
             child: Container(
               width: 50,
               height: 50,
-              color: Colors.grey[300], // Color de fondo para el avatar
+              color: Colors.grey[300], 
               child: Center(
                 child: Text(
                   '${usuario.name?.firstname?.substring(0, 1) ?? ''}${usuario.name?.lastname?.substring(0, 1) ?? ''}', // Iniciales
@@ -43,12 +43,7 @@ class ContactList extends StatelessWidget {
             ],
           ),
           onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => UserPage(usuario: usuario), // Pasa el usuario seleccionado
-              ),
-            );
+            onUserSelected(usuario); 
           },
         );
       },

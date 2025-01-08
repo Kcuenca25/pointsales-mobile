@@ -1,8 +1,6 @@
-import 'package:ecomerce_app/src/presentation/components/custon_appbar/custon_appbar.dart';
-import 'package:ecomerce_app/src/presentation/screens/forms/form_screen.dart';
 import 'package:flutter/material.dart';
 
-// Asegúrate de importar la página de cambio de contraseña
+import 'package:ecomerce_app/src/presentation/components/custon_appbar/custon_appbar.dart';
 import 'package:ecomerce_app/src/presentation/screens/forms/form_change_password.dart';
 
 void main() => runApp(const SettingsPage());
@@ -25,10 +23,10 @@ class SettingsPage extends StatelessWidget {
                 elevation: 0,
                 margin: EdgeInsets.zero,
                 shape: const Border(
-                  bottom: BorderSide(color: Color.fromARGB(255, 226, 216, 216)), // Borde inferior de color gris
+                  bottom: BorderSide(color: Color.fromARGB(255, 226, 216, 216)), 
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.only(bottom: 20.0), // Añadir espaciado inferior
+                  padding: const EdgeInsets.only(bottom: 20.0), 
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.center,
@@ -71,7 +69,7 @@ class SettingsPage extends StatelessWidget {
                     bottom: BorderSide(color: Colors.white), 
                   ),
                   child: Padding(
-                    padding: EdgeInsets.only(bottom: 20.0), // Añadir espaciado inferior
+                    padding: EdgeInsets.only(bottom: 20.0), 
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -138,10 +136,10 @@ class SettingsPage extends StatelessWidget {
                   elevation: 0,
                   margin: EdgeInsets.zero,
                   shape: Border(
-                    bottom: BorderSide(color: Colors.white), // Borde inferior de color gris
+                    bottom: BorderSide(color: Colors.white), 
                   ),
                   child: Padding(
-                    padding: EdgeInsets.only(bottom: 20.0), // Añadir espaciado inferior
+                    padding: EdgeInsets.only(bottom: 20.0), 
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -188,31 +186,11 @@ class SettingsPage extends StatelessWidget {
             ),
             TextButton(
               child: const Text("Sí"),
-              onPressed: () {
-                Navigator.of(context).pop();
-                _logout(context);
-              },
+              onPressed: () {},
             ),
           ],
         );
       },
     );
-  }
-
-  void _logout(BuildContext context) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return const Center(
-          child: CircularProgressIndicator(),
-        );
-      },
-    );
-    Future.delayed(const Duration(seconds: 2), () {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => const FormScreen()),
-      );
-    });
   }
 }

@@ -122,7 +122,7 @@ class _ProductListState extends State<ProductList> {
                 child: Text('Total: \$${totalPrice.toStringAsFixed(2)}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ),
             ),
-           Center(
+            Center(
               child: ElevatedButton(
                 onPressed: isAnySelected ? () {
                   List<Product> selectedProducts = filteredProducts.where((product) => product.isSelected).toList();
@@ -150,7 +150,6 @@ class _ProductListState extends State<ProductList> {
       bottomNavigationBar: CustomCircleNavBar(
         selectedIndex: 2, // Cambia según la posición de esta pantalla
         onItemTapped: (index) {
-          // Lógica para navegar a la pantalla correspondiente
           if (index == 0) {
             Navigator.pushReplacementNamed(context, '/home');
           } else if (index == 1) {
@@ -158,7 +157,6 @@ class _ProductListState extends State<ProductList> {
           } else if (index == 2) {
             Navigator.pushReplacementNamed(context, '/products');
           }
-          // Agrega más navegación según tus pantallas
         },
       ),
     );

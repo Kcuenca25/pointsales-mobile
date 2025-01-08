@@ -7,6 +7,10 @@ import 'package:ecomerce_app/src/presentation/components/custon_appbar/custon_ap
 import 'package:ecomerce_app/src/presentation/components/botton_navigation_bar/circle_navbar.dart';
 
 class ClientScreen extends StatefulWidget {
+  final Function(User) onUserPageNavigate;
+
+  const ClientScreen({Key? key, required this.onUserPageNavigate}) : super(key: key);
+
   @override
   _ClientScreenState createState() => _ClientScreenState();
 }
@@ -64,7 +68,10 @@ class _ClientScreenState extends State<ClientScreen> {
               if (filteredUsers.isEmpty)
                 const Center(child: Text('No hay usuarios disponibles.'))
               else
-                ContactList(users: filteredUsers),
+                ContactList(
+                  users: filteredUsers,
+                  onUserSelected: widget.onUserPageNavigate, // Pasar el callback
+                ),
             ],
           ),
         ),
@@ -85,8 +92,6 @@ class _ClientScreenState extends State<ClientScreen> {
             case 4:
               Navigator.pushReplacementNamed(context, '/profile_screen');
               break;
-            default:
-              Navigator.pushReplacementNamed(context, '/user_page');
           }
         },
       ),

@@ -1,15 +1,16 @@
+import 'package:ecomerce_app/src/domain/models/users_model.dart';
+import 'package:ecomerce_app/src/presentation/components/botton_navigation_bar/circle_navbar.dart';
+import 'package:ecomerce_app/src/presentation/components/custon_appbar/custon_appbar.dart';
 import 'package:ecomerce_app/src/presentation/components/custon_bar_row/custon_bar_row.dart';
+import 'package:ecomerce_app/src/presentation/components/custon_form/custon_button.dart';
 import 'package:ecomerce_app/src/presentation/screens/botton_navigation_bar_screen/03-car_shop_screen.dart';
 import 'package:flutter/material.dart';
-import 'package:ecomerce_app/src/domain/models/users_model.dart';
-import 'package:ecomerce_app/src/presentation/components/custon_appbar/custon_appbar.dart';
-import 'package:ecomerce_app/src/presentation/components/custon_form/custon_button.dart';
-import 'package:ecomerce_app/src/presentation/components/botton_navigation_bar/circle_navbar.dart';
 
 class UserPage extends StatelessWidget {
   final User usuario;
+  final Function(User) onProductListNavigate; 
 
-  const UserPage({super.key, required this.usuario});
+  const UserPage({super.key, required this.usuario, required this.onProductListNavigate});
 
   @override
   Widget build(BuildContext context) {
@@ -21,12 +22,13 @@ class UserPage extends StatelessWidget {
             children: [
               const CustonAppBar(),
               const SizedBox(height: 20),
-              CustomBarRow( 
+              CustomBarRow(
                 title: 'Ordenes de compra',
                 onBackButtonPressed: () {
                   Navigator.pop(context);
                 },
-                backgroundColor: Colors.blueAccent, textColor: Colors.black,
+                backgroundColor: Colors.blueAccent,
+                textColor: Colors.black,
               ),
               const SizedBox(height: 8),
               CircleAvatar(
@@ -48,7 +50,10 @@ class UserPage extends StatelessWidget {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => const CarShopScreen(selectedIndex: 2),
+                      builder: (context) => CarShopScreen(
+                        selectedIndex: 2,
+                        onProductListNavigate: onProductListNavigate, 
+                      ),
                     ),
                   );
                 },
@@ -58,7 +63,7 @@ class UserPage extends StatelessWidget {
         ),
       ),
       bottomNavigationBar: CustomCircleNavBar(
-        selectedIndex: 1, // Ajusta este valor según corresponda
+        selectedIndex: 1, 
         onItemTapped: (index) {
           switch (index) {
             case 0:

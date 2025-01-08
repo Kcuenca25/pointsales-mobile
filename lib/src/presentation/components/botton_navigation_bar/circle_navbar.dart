@@ -16,18 +16,18 @@ class CustomCircleNavBar extends StatelessWidget {
     return CircleNavBar(
       activeIndex: selectedIndex, 
       onTap: onItemTapped,
-      color: Colors.white, // Barra de navegación de color blanco
+      color: Colors.white,
 
       activeIcons: const [
-        Icon(Icons.home, color: Colors.white), // Ítem activo con icono de color blanco
-        Icon(Icons.people, color: Colors.white),
+        Icon(Icons.home, color: Colors.white),
+        Icon(Icons.groups_outlined, color: Colors.white),
         Icon(Icons.add_shopping_cart, color: Colors.white),
         Icon(Icons.file_copy_outlined, color: Colors.white),
         Icon(Icons.person_2_outlined, color: Colors.white),
       ],
       inactiveIcons: const [
         Icon(Icons.home, color: Colors.grey),
-        Icon(Icons.people, color: Colors.grey),
+        Icon(Icons.groups_outlined, color: Colors.grey),
         Icon(Icons.add_shopping_cart, color: Colors.grey),
         Icon(Icons.file_copy_outlined, color: Colors.grey),
         Icon(Icons.person_2_outlined, color: Colors.grey),
@@ -44,7 +44,7 @@ class CustomCircleNavBar extends StatelessWidget {
       shadowColor: Colors.black54,
       circleShadowColor: Colors.black54,
       elevation: 10,
-      circleColor: Colors.blueAccent, // Color del círculo del ítem activo
+      circleColor: Colors.blueAccent, 
     );
   }
 }

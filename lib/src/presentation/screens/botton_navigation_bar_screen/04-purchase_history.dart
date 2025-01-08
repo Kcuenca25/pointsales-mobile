@@ -19,62 +19,71 @@ class PurchaseHistory extends StatelessWidget {
           children: [
             const CustonAppBar(),
             const SizedBox(height: 20),
-            CustomBarRow( 
-                title: 'Historial de compras',
-                onBackButtonPressed: () {
-                  Navigator.push(context,MaterialPageRoute(builder: (context)=>const ProductNewOrderBuy()));
-                },
-                backgroundColor: Colors.blueAccent, textColor: Colors.black,
-              ),
+            CustomBarRow(
+              title: 'Historial de compras',
+              onBackButtonPressed: () {
+                Navigator.push(context, MaterialPageRoute(builder: (context) => const ProductNewOrderBuy()));
+              },
+              backgroundColor: Colors.blueAccent,
+              textColor: Colors.black,
+            ),
             const SizedBox(height: 20),
             Expanded(
-              child: ListView.builder(
-                itemCount: purchaseHistory.length,
-                itemBuilder: (context, index) {
-                  final purchase = purchaseHistory[index];
-                  return Card(
-                    margin: const EdgeInsets.all(8.0),
-                    child: Column(
-                      children: [
-                        ListTile(
-                          leading: CircleAvatar(
-                            backgroundImage: NetworkImage(purchase['products'][0]['image'] ?? 'https://via.placeholder.com/150'),
-                          ),
-                          title: Text('Usuario: ${purchase['user']}'),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+              child: purchaseHistory.isEmpty
+                  ? const Center(child: Text('No hay historial de compras.'))
+                  : ListView.builder(
+                      itemCount: purchaseHistory.length,
+                      itemBuilder: (context, index) {
+                        final purchase = purchaseHistory[index];
+                        return Card(
+                          margin: const EdgeInsets.all(8.0),
+                          child: Column(
                             children: [
-                              Text('Producto: ${purchase['products'][0]['title']}'),
-                              Text('Descripción: ${purchase['products'][0]['description']}'),
-                              Text('Cantidad: ${purchase['products'][0]['quantity']}'),
-                              Text('Precio Unitario: \$${purchase['products'][0]['price'].toStringAsFixed(2)}'),
-                              Text('Precio Total: \$${purchase['totalPrice'].toStringAsFixed(2)}'),
+                              ListTile(
+                                leading: CircleAvatar(
+                                  backgroundImage: NetworkImage(purchase['products'][0]['image'] ?? 'https://via.placeholder.com/150'),
+                                ),
+                                title: Text('Usuario: ${purchase['user']}'),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Producto: ${purchase['products'][0]['title']}'),
+                                    Text('Descripción: ${purchase['products'][0]['description']}'),
+                                    Text('Cantidad: ${purchase['products'][0]['quantity']}'),
+                                    Text('Precio Unitario: \$${purchase['products'][0]['price'].toStringAsFixed(2)}'),
+                                    Text('Precio Total: \$${purchase['totalPrice'].toStringAsFixed(2)}'),
+                                  ],
+                                ),
+                              ),
                             ],
                           ),
-                        ),
-                      ],
+                        );
+                      },
                     ),
-                  );
-                },
-              ),
             ),
           ],
         ),
       ),
       bottomNavigationBar: CustomCircleNavBar(
-        selectedIndex: 3, // Cambia según la posición de esta pantalla
+        selectedIndex: 3,
         onItemTapped: (index) {
-          // Lógica para navegar a la pantalla correspondiente
-          if (index == 0) {
-            Navigator.pushReplacementNamed(context, '/home');
-          } else if (index == 1) {
-            Navigator.pushReplacementNamed(context, '/users');
-          } else if (index == 2) {
-            Navigator.pushReplacementNamed(context, '/products');
-          } else if (index == 3) {
-            Navigator.pushReplacementNamed(context, '/purchase_history'); // Asegúrate de que esta ruta esté definida
+          switch (index) {
+            case 0:
+              Navigator.pushReplacementNamed(context, '/home_screen');
+              break;
+            case 1:
+              Navigator.pushReplacementNamed(context, '/client_screen');
+              break;
+            case 2:
+              Navigator.pushReplacementNamed(context, '/car_shop_screen');
+              break;
+            case 3:
+              Navigator.pushReplacementNamed(context, '/purchase_history');
+              break;
+            case 4:
+              Navigator.pushReplacementNamed(context, '/profile_screen');
+              break;
           }
-          // Agrega más navegación según tus pantallas
         },
       ),
     );

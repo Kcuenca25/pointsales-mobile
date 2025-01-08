@@ -5,10 +5,10 @@ class CustonSearchProduct extends StatelessWidget {
   final Function(String) onTextChanged;
 
   const CustonSearchProduct({
-    Key? key,
+    super.key,
     required this.controller,
     required this.onTextChanged,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

@@ -9,7 +9,7 @@ class Product {
   String? image;
   Rating? rating;
   bool isSelected;
-  int quantity; // Nueva propiedad quantity
+  int quantity; 
 
   Product({
     this.id,
@@ -20,7 +20,7 @@ class Product {
     this.image,
     this.rating,
     this.isSelected = false,
-    this.quantity = 1, // Valor por defecto para quantity
+    this.quantity = 1, 
   });
 
   Map<String, dynamic> toMap() {
@@ -33,7 +33,7 @@ class Product {
       'image': image,
       'rating': rating?.toMap(),
       'isSelected': isSelected,
-      'quantity': quantity, // Agregar quantity al mapa
+      'quantity': quantity, 
     };
   }
 
@@ -47,7 +47,7 @@ class Product {
       image: map['image'],
       rating: map['rating'] != null ? Rating.fromMap(map['rating']) : null,
       isSelected: map['isSelected'] ?? false,
-      quantity: map['quantity']?.toInt() ?? 1, // Obtener quantity del mapa
+      quantity: map['quantity']?.toInt() ?? 1, 
     );
   }
 

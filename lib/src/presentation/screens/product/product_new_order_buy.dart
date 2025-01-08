@@ -20,7 +20,7 @@ class ProductNewOrderBuy extends StatefulWidget {
 }
 
 class _ProductNewOrderBuyState extends State<ProductNewOrderBuy> with WidgetsBindingObserver {
- final MobileScannerController controller = MobileScannerController();
+  final MobileScannerController controller = MobileScannerController();
   StreamSubscription<Object?>? _subscription;
   String qrCode = '';
   User? selectedUser;
@@ -76,7 +76,7 @@ class _ProductNewOrderBuyState extends State<ProductNewOrderBuy> with WidgetsBin
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SingleChildScrollView( // Permite el desplazamiento
+      body: SingleChildScrollView( 
         padding: const EdgeInsets.all(18.0),
         child: Column(
           children: [
@@ -99,7 +99,7 @@ class _ProductNewOrderBuyState extends State<ProductNewOrderBuy> with WidgetsBin
             ),
             const SizedBox(height: 10),
             SizedBox(
-              height: 300, // Altura fija para el escáner
+              height: 300, 
               child: MobileScanner(
                 controller: controller,
                 fit: BoxFit.cover,
@@ -143,7 +143,7 @@ class _ProductNewOrderBuyState extends State<ProductNewOrderBuy> with WidgetsBin
                   );
                 } else {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Por favor, selecciona un usuario')),
+                    const SnackBar(content: Text('Por favor, selecciona un usuario')),
                   );
                 }
               },

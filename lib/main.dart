@@ -1,5 +1,7 @@
 import 'package:ecomerce_app/src/presentation/screens/seccessfull_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:ecomerce_app/src/presentation/screens/product/product_list.dart';
+import 'package:ecomerce_app/src/presentation/screens/user/user_page.dart';
 import 'package:ecomerce_app/src/presentation/screens/user/home_screen.dart';
 import 'package:ecomerce_app/src/presentation/screens/botton_navigation_bar_screen/02-client_screen.dart';
 import 'package:ecomerce_app/src/presentation/screens/botton_navigation_bar_screen/03-car_shop_screen.dart';
@@ -7,7 +9,7 @@ import 'package:ecomerce_app/src/presentation/screens/botton_navigation_bar_scre
 import 'package:ecomerce_app/src/presentation/screens/botton_navigation_bar_screen/05-profile_screen.dart';
 import 'package:ecomerce_app/src/presentation/screens/forms/form_screen.dart';
 import 'package:ecomerce_app/src/presentation/screens/logo_screens.dart';
-
+import 'package:ecomerce_app/src/domain/models/users_model.dart';
 
 void main() => runApp(const MyApp());
 
@@ -33,8 +35,26 @@ class MyApp extends StatelessWidget {
         '/': (context) => const LogoScreens(),
         '/login': (context) => const FormScreen(),
         '/home_screen': (context) => const HomeScreen(),
-        '/client_screen': (context) => ClientScreen(),
-        '/car_shop_screen': (context) => const CarShopScreen(),
+        '/client_screen': (context) => ClientScreen(onUserPageNavigate: (User user) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => UserPage(
+              usuario: user,
+              onProductListNavigate: (User selectedUser) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => ProductList(selectedUser: selectedUser)),
+                );
+              },
+            )),
+          );
+        }),
+        '/car_shop_screen': (context) => CarShopScreen(onProductListNavigate: (User user) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => ProductList(selectedUser: user)),
+          );
+        }),
         '/profile_screen': (context) => const ProfileScreen(),
       },
       onGenerateRoute: (settings) {
@@ -45,13 +65,27 @@ class MyApp extends StatelessWidget {
           );
         }
         if (settings.name == '/purchase_history') {
-          final List<Map<String, dynamic>> args = settings.arguments as List<Map<String, dynamic>>;
+          final List<Map<String, dynamic>>? args = settings.arguments as List<Map<String, dynamic>>?;
           return MaterialPageRoute(
-            builder: (context) => PurchaseHistory(purchaseHistory: args),
+            builder: (context) => PurchaseHistory(purchaseHistory: args ?? []),
           );
         }
-        return null;
-      }
+        if (settings.name == '/user_page') {
+          final User usuario = settings.arguments as User;
+          return MaterialPageRoute(
+            builder: (context) => UserPage(
+              usuario: usuario,
+              onProductListNavigate: (User selectedUser) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => ProductList(selectedUser: selectedUser)),
+                );
+              },
+            ),
+          );
+        }
+        return MaterialPageRoute(builder: (context) => const HomeScreen());
+      },
     );
   }
 }

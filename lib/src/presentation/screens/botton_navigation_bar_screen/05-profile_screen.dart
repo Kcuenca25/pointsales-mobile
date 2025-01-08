@@ -89,7 +89,6 @@ class ProfileScreen extends StatelessWidget {
               const SizedBox(height: 20),
               GestureDetector(
                 onTap: () {
-                  // Agrega aquí la funcionalidad para configuraciones
                   Navigator.push(
                     context,
                     MaterialPageRoute(builder: (context) => const SettingsPage()));
@@ -171,9 +170,8 @@ class ProfileScreen extends StatelessWidget {
         ),
       ),
       bottomNavigationBar: CustomCircleNavBar(
-        selectedIndex: 4, // Cambia según la posición de esta pantalla
+        selectedIndex: 4, 
         onItemTapped: (index) {
-          // Lógica para navegar a la pantalla correspondiente
           if (index == 0) {
             Navigator.pushReplacementNamed(context, '/home');
           } else if (index == 1) {
@@ -181,9 +179,8 @@ class ProfileScreen extends StatelessWidget {
           } else if (index == 2) {
             Navigator.pushReplacementNamed(context, '/products');
           } else if (index == 3) {
-            Navigator.pushReplacementNamed(context, '/purchase_history'); // Asegúrate de que esta ruta esté definida
+            Navigator.pushReplacementNamed(context, '/purchase_history');
           }
-          // Agrega más navegación según tus pantallas
         },
       ),
     );
