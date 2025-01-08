@@ -18,8 +18,10 @@ class _FormChangePasswordState extends State<FormChangePassword> {
   final newPasswordController = TextEditingController();
   final confirmPasswordController = TextEditingController();
   bool passToggle = true;
+  bool showErrors = false; // Variable para controlar la visibilidad de errores
 
   String? validateEmail(String? value) {
+    if (!showErrors) return null;
     if (value == null || value.isEmpty) {
       return 'El correo electrónico no puede estar vacío';
     }
@@ -31,6 +33,7 @@ class _FormChangePasswordState extends State<FormChangePassword> {
   }
 
   String? validatePassword(String? value) {
+    if (!showErrors) return null;
     if (value == null || value.isEmpty) {
       return 'La contraseña no puede estar vacía';
     }
@@ -41,6 +44,7 @@ class _FormChangePasswordState extends State<FormChangePassword> {
   }
 
   String? validateConfirmPassword(String? value) {
+    if (!showErrors) return null;
     if (value == null || value.isEmpty) {
       return 'La confirmación de la contraseña no puede estar vacía';
     }
@@ -49,7 +53,21 @@ class _FormChangePasswordState extends State<FormChangePassword> {
     }
     return null;
   }
-  
+
+  void _submitForm() {
+    setState(() {
+      showErrors = true; // Mostrar errores al presionar el botón
+    });
+
+    if (_changePassword.currentState!.validate()) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const HomeScreen(),
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -57,7 +75,7 @@ class _FormChangePasswordState extends State<FormChangePassword> {
       body: Container(
         width: double.infinity,
         height: double.infinity,
-        color: Colors.blue, 
+        color: Colors.blue, // Fondo azul para toda la pantalla
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -67,7 +85,7 @@ class _FormChangePasswordState extends State<FormChangePassword> {
               child: Icon(
                 Icons.shopping_cart_outlined,
                 size: 90,
-                color: Colors.white,
+                color: Colors.white, // Color blanco para el icono
               ),
             ),
             const SizedBox(height: 1),
@@ -75,22 +93,23 @@ class _FormChangePasswordState extends State<FormChangePassword> {
               text: 'Ventas +',
               fontSize: 33,
               fontWeight: FontWeight.bold,
-              color: Colors.white, 
+              color: Colors.white, // Color blanco para el texto
             ),
             const SizedBox(height: 29),
             Expanded(
               child: Container(
-                padding: const EdgeInsets.all(40.0), 
+                padding: const EdgeInsets.all(40.0), // Añadimos padding interno
                 decoration: const BoxDecoration(
-                  color: Colors.white, 
+                  color: Colors.white, // Fondo blanco para el container
                   borderRadius: BorderRadius.only(
                     topLeft: Radius.circular(16),
                     topRight: Radius.circular(16),
-                  ), 
+                  ), // Borde redondeado en la parte superior
                 ),
                 child: SingleChildScrollView(
                   child: Form(
                     key: _changePassword,
+                    autovalidateMode: AutovalidateMode.disabled, // Deshabilitar la validación automática
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -99,21 +118,21 @@ class _FormChangePasswordState extends State<FormChangePassword> {
                           text: 'Cambiar contraseña',
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
-                          color: Colors.black, // Color azul para el texto
+                          color: Colors.black, // Color negro para el texto
                         ),
                         const SizedBox(height: 16),
                         CustomTextFormField(
                           controller: emailController,
-                          labelText: 'admin@email.com',
-                          hintText: 'Correo electrónico',
+                          labelText: 'Correo electrónico',
+                          hintText: 'admin@email.com',
                           prefixIcon: Icons.email_outlined,
                           validator: validateEmail,
                         ),
                         const SizedBox(height: 16),
                         CustomTextFormField(
                           controller: oldPasswordController,
-                          labelText: '***',
-                          hintText: 'Contraseña vieja',
+                          labelText: 'Contraseña vieja',
+                          hintText: '***',
                           prefixIcon: Icons.lock_outline,
                           obscureText: passToggle,
                           validator: validatePassword,
@@ -121,8 +140,8 @@ class _FormChangePasswordState extends State<FormChangePassword> {
                         const SizedBox(height: 16),
                         CustomTextFormField(
                           controller: newPasswordController,
-                          labelText: '***',
-                          hintText: 'Contraseña nueva',
+                          labelText: 'Contraseña nueva',
+                          hintText: '***',
                           prefixIcon: Icons.lock_outline,
                           obscureText: passToggle,
                           validator: validatePassword,
@@ -137,11 +156,11 @@ class _FormChangePasswordState extends State<FormChangePassword> {
                             ),
                           ),
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 16),
                         CustomTextFormField(
                           controller: confirmPasswordController,
-                          labelText: '***',
-                          hintText: 'Repetir contraseña nueva',
+                          labelText: 'Repetir contraseña nueva',
+                          hintText: '***',
                           prefixIcon: Icons.lock_outline,
                           obscureText: passToggle,
                           validator: validateConfirmPassword,
@@ -149,16 +168,7 @@ class _FormChangePasswordState extends State<FormChangePassword> {
                         const SizedBox(height: 40),
                         CustomElevatedButton(
                           text: 'Cambiar',
-                          onPressed: () {
-                            if (_changePassword.currentState!.validate()) {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => const HomeScreen(),
-                                ),
-                              );
-                            }
-                          },
+                          onPressed: _submitForm,
                         ),
                       ],
                     ),
