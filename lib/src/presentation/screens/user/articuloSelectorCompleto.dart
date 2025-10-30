@@ -1255,7 +1255,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         },
         icon: const Icon(Icons.shopping_bag),
         label: Text(
-          widget.cantidadInicial > 0 ? "Actualizar en orden" : "Agregar a orden",
+          widget.cantidadInicial > 0 ? "Actualizar en orden" : "Agregar artículo",
           style: const TextStyle(fontSize: 16),
         ),
         style: ElevatedButton.styleFrom(

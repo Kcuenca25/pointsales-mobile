@@ -6,6 +6,9 @@ import 'package:ecomerce_app/src/presentation/components/custon_appbar/custon_ap
 import 'package:ecomerce_app/src/presentation/screens/user/home_screen.dart';
 import 'package:ecomerce_app/src/presentation/components/botton_navigation_bar/circle_navbar.dart';
 import 'package:ecomerce_app/src/presentation/screens/botton_navigation_bar_screen/02-client_screen.dart';
+import 'package:ecomerce_app/src/data/api_repository/odooOrderService.dart';
+import 'package:ecomerce_app/src/data/api_repository/odoo_service_enhanced.dart';
+
 
 //VENTANA DE ORDENES DE VENTA
 
@@ -27,152 +30,285 @@ class RecentOrdersScreen extends StatefulWidget {
 
 class _RecentOrdersScreenState extends State<RecentOrdersScreen> {
   String estadoFiltro = "Todas";
-  //String articuloFiltro = "";
   String _ordenFecha = "DESC";
   int _selectedIndex = 2;
   int _resultadosCount = 0;
 
-  // Listas de categorías y marcas basadas en los artículos
-  List<String> categorias = ["Todas", "Computadoras", "Teléfonos", "Audio", "Monitores", "Periféricos", "Tablets", "Wearables", "Cámaras", "Almacenamiento"];
-  List<String> marcas = ["Todas", "HP", "Samsung", "Sony", "LG", "Logitech", "Razer", "Apple", "GoPro", "Seagate"];
+  // 🎯 CREA UNA COPIA MUTABLE DE LAS ÓRDENES
+  List<Map<String, dynamic>> _ordenesLocales = [];
 
-  @override
+ @override
   void initState() {
     super.initState();
-    _resultadosCount = widget.recentOrders.length;
+    // 🎯 INICIALIZA CON LAS ÓRDENES DEL WIDGET
+    _ordenesLocales = List<Map<String, dynamic>>.from(widget.recentOrders);
+    _resultadosCount = _ordenesLocales.length;
+    _cargarOrdenesDesdeOdoo(); // Cargar datos actualizados
+  }
+  void _agregarOrden(Map<String, dynamic> nuevaOrden) {
+    setState(() {
+      final ordenCompleta = {
+        'orden': nuevaOrden['orden'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
+        'cliente': nuevaOrden['cliente'] ?? 'Cliente desconocido',
+        'articulo': nuevaOrden['articulo'] ?? '',
+        'articulos': nuevaOrden['articulos'] ?? [],
+        'fecha': nuevaOrden['fecha'] ?? DateTime.now().toString(),
+        'estado': nuevaOrden['estado'] ?? 'Pendiente',
+        'total': nuevaOrden['total'] ?? 0.0,
+      };
+      
+      // 🎯 USA _ordenesLocales EN LUGAR DE widget.recentOrders
+      _ordenesLocales.insert(0, ordenCompleta);
+      _resultadosCount = _ordenesLocales.length;
+    });
   }
 
-  void _agregarOrden(Map<String, dynamic> nuevaOrden) {
-  setState(() {
-    // Asegurarnos de que la orden tenga la estructura completa
-    final ordenCompleta = {
-      'orden': nuevaOrden['orden'] ?? DateTime.now().millisecondsSinceEpoch.toString(),
-      'cliente': nuevaOrden['cliente'] ?? 'Cliente desconocido',
-      'articulo': nuevaOrden['articulo'] ?? '',
-      'articulos': nuevaOrden['articulos'] ?? [], // Lista de artículos
-      'fecha': nuevaOrden['fecha'] ?? DateTime.now().toString(),
-      'estado': nuevaOrden['estado'] ?? 'Pendiente',
-      'total': nuevaOrden['total'] ?? 0.0,
-    };
-    
-    widget.recentOrders.insert(0, ordenCompleta);
-    _resultadosCount = widget.recentOrders.length;
-  });
+// Agrega este método temporal para debug----------------PRUEBA-----------
+void _verificarEstadosOrdenes() {
+  print('📊 ESTADOS DE LAS ÓRDENES CARGADAS:');
+  for (var orden in _ordenesLocales) {
+    print('Orden ${orden['referencia_odoo']}:');
+    print('  - Estado Odoo: ${orden['state_odoo']}');
+    print('  - Estado Visual: ${orden['estado']}');
+    print('  - Invoice Status: ${orden['invoice_status']}');
+    print('  - Note: ${orden['note']}');
+    print('  ---');
+  }
 }
 
 
+  // 🎯 ACTUALIZA _cargarOrdenesDesdeOdoo
+  Future<void> _cargarOrdenesDesdeOdoo() async {
+    try {
+      final odooService = OdooServiceEnhanced(
+        baseUrl: 'https://pointsalesqa.tailorw.net',
+        dbName: 'pointsales_prodv18',
+      );
+      
+      bool isAuthenticated = await odooService.login('admin', 'admin');
+      
+      if (isAuthenticated) {
+        final orderService = OdooOrderService(odooService);
+        final ordenesOdoo = await orderService.getSaleOrders();
+        
+         setState(() {
+      _ordenesLocales = ordenesOdoo.map((ordenOdoo) {
+        return {
+          'orden': ordenOdoo['id'].toString(),
+          'cliente': ordenOdoo['partner_id'] is List 
+              ? (ordenOdoo['partner_id'][1] as String) 
+              : 'Cliente Odoo',
+          'fecha': ordenOdoo['date_order'],
+          'estado': _getEstadoVisual(ordenOdoo),
+          'state_odoo': ordenOdoo['state'],
+          'invoice_status': ordenOdoo['invoice_status'],
+          'note': ordenOdoo['note'],
+          'total': (ordenOdoo['amount_total'] as num).toDouble(),
+          'referencia_odoo': ordenOdoo['name'],
+        };
+      }).toList();
+      
+      _resultadosCount = _ordenesLocales.length;
+    });
+    
+            _verificarEstadosOrdenes();
 
-// FUNCIONES PARA MANEJAR COLORES E ICONOS POR ESTADO
+        //print('✅ Órdenes cargadas desde Odoo: ${ordenesOdoo.length}');
+      }
+    } catch (e) {
+      print('❌ Error cargando órdenes: $e');
+    }
+  }
+
+//--------------PRUEBA------------------------------------------------------
+// Método para crear orden de prueba
+Future<void> _crearOrdenPrueba() async {
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => AlertDialog(
+      content: Row(
+        children: [
+          CircularProgressIndicator(),
+          SizedBox(width: 16),
+          Text("Creando orden de prueba..."),
+        ],
+      ),
+    ),
+  );
+
+  try {
+    final odooService = OdooServiceEnhanced(
+      baseUrl: 'https://pointsalesqa.tailorw.net',
+      dbName: 'pointsales_prodv18',
+    );
+    
+    bool isAuthenticated = await odooService.login('admin', 'admin');
+    
+    if (isAuthenticated) {
+      final orderService = OdooOrderService(odooService);
+      
+      // Crear orden en estado draft
+      final resultado = await orderService.createSaleOrder(
+        partnerId: 9, // Alexander
+        orderLines: [
+          {
+            'product_id': 14, // Zapatos H No.7 Lila
+            'quantity': 2,
+            'price_unit': 1253.39,
+          }
+        ],
+      );
+
+      Navigator.pop(context);
+
+      if (resultado['success']) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Orden de prueba creada (ID: ${resultado['order_id']})'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        
+        // Recargar órdenes
+        _cargarOrdenesDesdeOdoo();
+      }
+    }
+  } catch (e) {
+    Navigator.pop(context);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('❌ Error: $e'),
+        backgroundColor: Colors.red,
+      ),
+    );
+  }
+}
+
+// Agrega un botón temporal en tu UI
+Widget _buildDebugButton() {
+  return FloatingActionButton(
+    heroTag: "debug",
+    onPressed: _crearOrdenPrueba,
+    backgroundColor: Colors.orange,
+    mini: true,
+    child: Icon(Icons.bug_report, color: Colors.white),
+  );
+}
+
+
+//-------------------------------------------------------------------------------------------
+
+
+// 🎯 FUNCIONES ACTUALIZADAS PARA LOS NUEVOS ESTADOS
+String _mapearEstadoOdoo(String estadoOdoo) {
+  switch (estadoOdoo) {
+    case 'draft': return 'Pendiente';
+    case 'sent': return 'Enviada';
+    case 'sale': return 'En Proceso';
+    case 'cancel': return 'Cancelada';
+    default: return 'Pendiente';
+  }
+}
+
 Color _getStatusColor(String status) {
   switch (status) {
-    case 'Pagada':
-      return Colors.green;
-    case 'Terminado':
-      return Colors.blue;
-    case 'En Proceso':
-      return const Color.fromARGB(255, 195, 215, 231);
-    case 'Recibida':
-      return Colors.green;
-    case 'Pendiente':
-      return const Color.fromARGB(255, 235, 135, 42);
-    case 'Cancelado':
-      return const Color.fromARGB(255, 158, 151, 151);
-    default:
-      return const Color.fromARGB(255, 253, 249, 249);
+    case 'Pendiente': return Colors.grey;
+    case 'Enviada': return Colors.blue;
+    case 'En Proceso': return Colors.orange;
+    case 'Facturada': return Colors.purple;
+    case 'Completada': return Colors.green;
+    case 'Cancelada': return Colors.red;
+    default: return Colors.grey;
   }
 }
 
 Color _getStatusBackgroundColor(String status) {
   switch (status) {
-    case 'Pagada':
-      return Colors.green.withOpacity(0.1);
-    case 'Terminado':
-      return Colors.blue.withOpacity(0.1);
-    case 'En Proceso':
-      return Colors.orange.withOpacity(0.1);
-    case 'Preparación':
-      return Colors.purple.withOpacity(0.1);
-    case 'Pendiente':
-      return Colors.amber.withOpacity(0.1);
-    case 'Cancelado':
-      return Colors.red.withOpacity(0.1);
-    default:
-      return Colors.grey.withOpacity(0.1);
+    case 'Pendiente': return Colors.grey.withOpacity(0.1);
+    case 'Enviada': return Colors.blue.withOpacity(0.1);
+    case 'En Proceso': return Colors.orange.withOpacity(0.1);
+    case 'Facturada': return Colors.purple.withOpacity(0.1);
+    case 'Completada': return Colors.green.withOpacity(0.1);
+    case 'Cancelada': return Colors.red.withOpacity(0.1);
+    default: return Colors.grey.withOpacity(0.1);
   }
 }
 
 IconData _getStatusIcon(String status) {
   switch (status) {
-    case 'Pagada':
-      return Icons.check_circle;
-    case 'Terminado':
-      return Icons.verified;
-    case 'En Proceso':
-      return Icons.build;
-    case 'Preparación':
-      return Icons.inventory_2;
-    case 'Pendiente':
-      return Icons.pending_actions;
-    case 'Cancelado':
-      return Icons.cancel;
-    default:
-      return Icons.help;
+    case 'Pendiente': return Icons.pending_actions;
+    case 'Enviada': return Icons.send;
+    case 'En Proceso': return Icons.build;
+    case 'Facturada': return Icons.receipt;
+    case 'Completada': return Icons.verified;
+    case 'Cancelada': return Icons.cancel;
+    default: return Icons.help;
   }
 }
 
 String _getStatusDescription(String status) {
   switch (status) {
-    case 'Pagada':
-      return "Orden pagada y completada";
-    case 'Terminado':
-      return "Orden terminada lista para entrega";
-    case 'En Proceso':
-      return "Orden en proceso de elaboración";
-    case 'Preparación':
-      return "Orden en preparación inicial";
-    case 'Pendiente':
-      return "Orden pendiente de procesar";
-    case 'Cancelado':
-      return "Orden cancelada";
-    default:
-      return "Estado desconocido";
+    case 'Pendiente': return "Orden recién creada - Pendiente de confirmación";
+    case 'Enviada': return "Cotización enviada al cliente";
+    case 'En Proceso': return "Orden confirmada - En proceso de elaboración";
+    case 'Facturada': return "Orden facturada - Proceso completado";
+    case 'Completada': return "Orden entregada y finalizada";
+    case 'Cancelada': return "Orden cancelada";
+    default: return "Estado desconocido";
   }
 }
 
-
-
-void _aplicarFiltros() {
-  setState(() {
-    // Actualizar el contador de resultados basado en el filtro actual
-    _resultadosCount = widget.recentOrders.where((order) {
-      return estadoFiltro == "Todas" || order['estado'] == estadoFiltro;
-    }).length;
-  });
+//  FUNCIÓN MEJORADA PARA DETERMINAR ESTADO VISUAL
+String _getEstadoVisual(Map<String, dynamic> order) {
+  final estadoOdoo = order['state_odoo'] ?? 'draft';
+  final invoiceStatus = order['invoice_status'] ?? 'no';
+  final note = order['note'] ?? '';
+  
+  // Si tiene nota de completado, mostrar como "Completada"
+  if (note.contains('✅') || note.contains('completado')) {
+    return 'Completada';
+  }
+  
+  // Si está facturada, mostrar como "Facturada"
+  if (invoiceStatus == 'invoiced') {
+    return 'Facturada';
+  }
+  
+  // Usar mapeo normal de Odoo
+  return _mapearEstadoOdoo(estadoOdoo);
 }
 
+  // 🎯 ACTUALIZA _aplicarFiltros
+  void _aplicarFiltros() {
+    setState(() {
+      _resultadosCount = _ordenesLocales.where((order) {
+        return estadoFiltro == "Todas" || order['estado'] == estadoFiltro;
+      }).length;
+    });
+  }
 
-Widget _buildOrdersList() {
-  List<Map<String, dynamic>> filteredOrders =
-      widget.recentOrders.where((order) {
-    final estadoMatch =
-        estadoFiltro == "Todas" || order['estado'] == estadoFiltro;
-    return estadoMatch; 
-  }).toList();
+  // 🎯 ACTUALIZA _buildOrdersList
+  Widget _buildOrdersList() {
+    List<Map<String, dynamic>> filteredOrders = _ordenesLocales.where((order) {
+      final estadoMatch = estadoFiltro == "Todas" || order['estado'] == estadoFiltro;
+      return estadoMatch; 
+    }).toList();
 
-  _sortOrdersByDate();
+    _sortOrdersByDate();
 
-  if (filteredOrders.isEmpty) return _buildEmptyState();
+    if (filteredOrders.isEmpty) return _buildEmptyState();
 
-  return ListView.builder(
-    padding: const EdgeInsets.symmetric(vertical: 8), 
-    itemCount: filteredOrders.length,
-    itemBuilder: (context, index) {
-      final order = filteredOrders[index];
-      return _buildOrderCard(order, order['estado'] == "Pagada",
-          showCliente: true, showArticulo: true);
-    },
-  );
-}
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(vertical: 8), 
+      itemCount: filteredOrders.length,
+      itemBuilder: (context, index) {
+        final order = filteredOrders[index];
+        return _buildOrderCard(order, order['estado'] == "Pagada",
+            showCliente: true, showArticulo: true);
+      },
+    );
+  }
 
 
 Widget _buildFilterSection() {
@@ -266,58 +402,58 @@ Widget _buildFilterSection() {
 }
 
 
- void _abrirOrdenarBottomSheet() {
-  showModalBottomSheet(
-    context: context,
-    backgroundColor: Colors.white,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-    ),
-    builder: (_) {
-      return Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: const [
-                Icon(Icons.sort, color: Colors.blue),
-                SizedBox(width: 8),
-                Text(
-                  "Ordenar por",
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            ListTile(
-              leading: const Icon(Icons.arrow_upward, color: Colors.blue),
-              title: const Text("Más antiguas primero"),
-              onTap: () {
-                setState(() => _ordenFecha = "ASC");
-                _sortOrdersByDate();
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.arrow_downward, color: Colors.blue),
-              title: const Text("Más recientes primero"),
-              onTap: () {
-                setState(() => _ordenFecha = "DESC");
-                _sortOrdersByDate();
-                Navigator.pop(context);
-              },
-            ),
-          ],
-        ),
-      );
-    },
-  );
-}
+//  void _abrirOrdenarBottomSheet() {
+//   showModalBottomSheet(
+//     context: context,
+//     backgroundColor: Colors.white,
+//     shape: const RoundedRectangleBorder(
+//       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+//     ),
+//     builder: (_) {
+//       return Padding(
+//         padding: const EdgeInsets.all(16),
+//         child: Column(
+//           mainAxisSize: MainAxisSize.min,
+//           crossAxisAlignment: CrossAxisAlignment.start,
+//           children: [
+//             Row(
+//               children: const [
+//                 Icon(Icons.sort, color: Colors.blue),
+//                 SizedBox(width: 8),
+//                 Text(
+//                   "Ordenar por",
+//                   style: TextStyle(
+//                     fontSize: 16,
+//                     fontWeight: FontWeight.bold,
+//                   ),
+//                 ),
+//               ],
+//             ),
+//             const SizedBox(height: 16),
+//             ListTile(
+//               leading: const Icon(Icons.arrow_upward, color: Colors.blue),
+//               title: const Text("Más antiguas primero"),
+//               onTap: () {
+//                 setState(() => _ordenFecha = "ASC");
+//                 _sortOrdersByDate();
+//                 Navigator.pop(context);
+//               },
+//             ),
+//             ListTile(
+//               leading: const Icon(Icons.arrow_downward, color: Colors.blue),
+//               title: const Text("Más recientes primero"),
+//               onTap: () {
+//                 setState(() => _ordenFecha = "DESC");
+//                 _sortOrdersByDate();
+//                 Navigator.pop(context);
+//               },
+//             ),
+//           ],
+//         ),
+//       );
+//     },
+//   );
+// }
 
 
 
@@ -513,13 +649,16 @@ Widget build(BuildContext context) {
   );
 }
 
+  // 🎯 ACTUALIZA _sortOrdersByDate
   void _sortOrdersByDate() {
-    widget.recentOrders.sort((a, b) {
-      final fechaA = DateTime.tryParse(a['fecha']) ?? DateTime.now();
-      final fechaB = DateTime.tryParse(b['fecha']) ?? DateTime.now();
-      return _ordenFecha == "ASC"
-          ? fechaA.compareTo(fechaB)
-          : fechaB.compareTo(fechaA);
+    setState(() {
+      _ordenesLocales.sort((a, b) {
+        final fechaA = DateTime.tryParse(a['fecha']) ?? DateTime.now();
+        final fechaB = DateTime.tryParse(b['fecha']) ?? DateTime.now();
+        return _ordenFecha == "ASC"
+            ? fechaA.compareTo(fechaB)
+            : fechaB.compareTo(fechaA);
+      });
     });
   }
 
@@ -539,7 +678,16 @@ Widget _buildOrderCard(Map<String, dynamic> order, bool isPagada,
   // Obtener la lista de artículos (si existe)
   final List<dynamic> articulos = order['articulos'] ?? [];
   final bool tieneMultiplesArticulos = articulos.length > 1;
-  final String estado = order['estado'] ?? "Pendiente";
+  
+  // 🎯 USAR EL NUEVO SISTEMA DE ESTADOS
+  final estadoVisual = _getEstadoVisual(order);
+  final estadoOdoo = order['state_odoo'] ?? 'draft';
+  
+  // 🎯 DETERMINAR BOTONES DISPONIBLES
+  final puedeConfirmar = estadoOdoo == 'draft';
+  final puedeEnviar = estadoOdoo == 'draft';
+  final puedeCancelar = estadoOdoo != 'cancel' && estadoVisual != 'Completada';
+  final puedeMarcarCompletada = estadoOdoo == 'sale' && estadoVisual != 'Completada';
 
   return Container(
     margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
@@ -554,7 +702,7 @@ Widget _buildOrderCard(Map<String, dynamic> order, bool isPagada,
         ),
       ],
       border: Border.all(
-        color: _getStatusColor(estado).withOpacity(0.3),
+        color: _getStatusColor(estadoVisual).withOpacity(0.3),
         width: 1,
       ),
     ),
@@ -565,7 +713,7 @@ Widget _buildOrderCard(Map<String, dynamic> order, bool isPagada,
           width: 4,
           height: 120, // Altura fija para que se vea como en inventario
           decoration: BoxDecoration(
-            color: _getStatusColor(estado),
+            color: _getStatusColor(estadoVisual),
             borderRadius: const BorderRadius.only(
               topLeft: Radius.circular(12),
               bottomLeft: Radius.circular(12),
@@ -589,12 +737,12 @@ Widget _buildOrderCard(Map<String, dynamic> order, bool isPagada,
                       width: 32,
                       height: 32,
                       decoration: BoxDecoration(
-                        color: _getStatusBackgroundColor(estado),
+                        color: _getStatusBackgroundColor(estadoVisual),
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
-                        _getStatusIcon(estado),
-                        color: _getStatusColor(estado),
+                        _getStatusIcon(estadoVisual),
+                        color: _getStatusColor(estadoVisual),
                         size: 16,
                       ),
                     ),
@@ -636,10 +784,11 @@ Widget _buildOrderCard(Map<String, dynamic> order, bool isPagada,
                       ),
                     ),
                     
-                    // Total de la orden
+                    // 🎯 COLUMNA DERECHA - TOTAL Y BOTONES
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
+                        // Total de la orden
                         Text(
                           "\$${order['total']?.toStringAsFixed(2) ?? '0.00'}",
                           style: const TextStyle(
@@ -649,22 +798,46 @@ Widget _buildOrderCard(Map<String, dynamic> order, bool isPagada,
                           ),
                         ),
                         const SizedBox(height: 4),
+                        
                         // ✅ BADGE DE ESTADO COMPACTO
                         Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 2),
                           decoration: BoxDecoration(
-                            color: _getStatusBackgroundColor(estado),
+                            color: _getStatusBackgroundColor(estadoVisual),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
-                            estado,
+                            estadoVisual,
                             style: TextStyle(
                               fontWeight: FontWeight.w600,
                               fontSize: 10,
-                              color: _getStatusColor(estado),
+                              color: _getStatusColor(estadoVisual),
                             ),
                           ),
+                        ),
+                        
+                        const SizedBox(height: 8),
+                        
+                        // 🎯 BOTONES DE ACCIÓN (EN COLUMNA)
+                        Column(
+                          children: [
+                            if (puedeConfirmar)
+                              _buildActionButton('Confirmar', Icons.check, Colors.blue, 
+                                () => _confirmarOrden(order['orden'])),
+                            
+                            if (puedeEnviar)
+                              _buildActionButton('Enviar', Icons.send, Colors.blue, 
+                                () => _enviarCotizacion(order['orden'])),
+                            
+                            if (puedeMarcarCompletada)
+                              _buildActionButton('Completar', Icons.verified, Colors.green, 
+                                () => _marcarCompletada(order['orden'])),
+                            
+                            if (puedeCancelar)
+                              _buildActionButton('Cancelar', Icons.cancel, Colors.red, 
+                                () => _cancelarOrden(order['orden'])),
+                          ],
                         ),
                       ],
                     ),
@@ -778,6 +951,241 @@ Widget _buildOrderCard(Map<String, dynamic> order, bool isPagada,
     ),
   );
 }
+
+// 🎯 WIDGET PARA BOTONES DE ACCIÓN (AGREGA ESTA FUNCIÓN)
+Widget _buildActionButton(String text, IconData icon, Color color, VoidCallback onPressed) {
+  return Container(
+    margin: const EdgeInsets.only(bottom: 4),
+    child: ElevatedButton.icon(
+      icon: Icon(icon, size: 12),
+      label: Text(text, style: const TextStyle(fontSize: 10)),
+      onPressed: onPressed,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: color,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        minimumSize: const Size(0, 0),
+      ),
+    ),
+  );
+}
+
+// ✅ CONFIRMAR ORDEN
+Future<void> _confirmarOrden(String orderId) async {
+  final confirmado = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('Confirmar Orden'),
+      content: Text('¿Confirmar la orden $orderId? Esto cambiará el estado a "En Proceso".'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: Text('Cancelar'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: Text('Confirmar', style: TextStyle(color: Colors.blue)),
+        ),
+      ],
+    ),
+  );
+
+  if (confirmado == true) {
+    _ejecutarAccionOrden(
+      orderId, 
+      'confirmar', 
+      'Confirmando orden...',
+      '✅ Orden $orderId confirmada'
+    );
+  }
+}
+
+// ✅ ENVIAR COTIZACIÓN
+Future<void> _enviarCotizacion(String orderId) async {
+  final confirmado = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('Enviar Cotización'),
+      content: Text('¿Enviar cotización de la orden $orderId al cliente?'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: Text('Cancelar'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: Text('Enviar', style: TextStyle(color: Colors.blue)),
+        ),
+      ],
+    ),
+  );
+
+  if (confirmado == true) {
+    _ejecutarAccionOrden(
+      orderId, 
+      'enviar', 
+      'Enviando cotización...',
+      '✅ Cotización $orderId enviada'
+    );
+  }
+}
+
+// ✅ MARCAR COMO COMPLETADA
+Future<void> _marcarCompletada(String orderId) async {
+  final confirmado = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('Marcar como Completada'),
+      content: Text('¿Marcar la orden $orderId como completada/entregada?'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: Text('Cancelar'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: Text('Completar', style: TextStyle(color: Colors.green)),
+        ),
+      ],
+    ),
+  );
+
+  if (confirmado == true) {
+    _ejecutarAccionOrden(
+      orderId, 
+      'completar', 
+      'Marcando como completada...',
+      '✅ Orden $orderId completada'
+    );
+  }
+}
+
+// ✅ CANCELAR ORDEN
+Future<void> _cancelarOrden(String orderId) async {
+  final confirmado = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('Cancelar Orden'),
+      content: Text('¿Cancelar la orden $orderId? Esta acción no se puede deshacer.'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: Text('Mantener'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: Text('Cancelar', style: TextStyle(color: Colors.red)),
+        ),
+      ],
+    ),
+  );
+
+  if (confirmado == true) {
+    _ejecutarAccionOrden(
+      orderId, 
+      'cancelar', 
+      'Cancelando orden...',
+      '✅ Orden $orderId cancelada'
+    );
+  }
+}
+
+// 🎯 MÉTODO PRINCIPAL PARA EJECUTAR ACCIONES
+Future<void> _ejecutarAccionOrden(
+  String orderId, 
+  String accion, 
+  String mensajeLoading,
+  String mensajeExito
+) async {
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => AlertDialog(
+      content: Row(
+        children: [
+          CircularProgressIndicator(),
+          SizedBox(width: 16),
+          Text(mensajeLoading),
+        ],
+      ),
+    ),
+  );
+
+  try {
+    final odooService = OdooServiceEnhanced(
+      baseUrl: 'https://pointsalesqa.tailorw.net',
+      dbName: 'pointsales_prodv18',
+    );
+    
+    bool isAuthenticated = await odooService.login('admin', 'admin');
+    
+    if (isAuthenticated) {
+      final orderService = OdooOrderService(odooService);
+      Map<String, dynamic> resultado;
+
+      // EJECUTAR ACCIÓN CORRESPONDIENTE
+      switch (accion) {
+        case 'confirmar':
+          resultado = await orderService.confirmSaleOrder(int.parse(orderId));
+          break;
+        case 'enviar':
+          resultado = await orderService.sendQuotation(int.parse(orderId));
+          break;
+        case 'completar':
+          resultado = await orderService.markAsInvoiced(int.parse(orderId));
+          break;
+        case 'cancelar':
+          resultado = await orderService.cancelSaleOrder(int.parse(orderId));
+          break;
+        default:
+          resultado = {'success': false, 'error': 'Acción no válida'};
+      }
+
+      Navigator.pop(context); // Cerrar loading
+
+      if (resultado['success']) {
+        // Recargar los datos de la orden
+        final ordenActualizada = await orderService.getOrderDetails(int.parse(orderId));
+        
+        setState(() {
+          final index = widget.recentOrders.indexWhere(
+            (order) => order['orden'] == orderId
+          );
+          if (index != -1 && ordenActualizada.isNotEmpty) {
+            // Actualizar datos de la orden
+            widget.recentOrders[index]['state_odoo'] = ordenActualizada['state'];
+            widget.recentOrders[index]['invoice_status'] = ordenActualizada['invoice_status'];
+            widget.recentOrders[index]['note'] = ordenActualizada['note'];
+            widget.recentOrders[index]['estado'] = _getEstadoVisual(ordenActualizada);
+          }
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(mensajeExito),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error: ${resultado['error']}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  } catch (e) {
+    Navigator.pop(context);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('❌ Error: $e'),
+        backgroundColor: Colors.red,
+      ),
+    );
+  }
+}
+
 
 // ✅ NUEVO MÉTODO PARA ARTÍCULOS COMPACTOS (como en inventario)
 Widget _buildArticuloItemCompact({
@@ -1101,4 +1509,7 @@ Widget _buildArticuloItem({
       return dateString.split(' ')[0];
     }
   }
+
+
+
 }

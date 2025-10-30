@@ -17,6 +17,8 @@ import 'package:ecomerce_app/src/domain/models/customer_model.dart';
 import 'package:ecomerce_app/src/presentation/screens/user/articuloSelectorCompleto.dart';
 import 'package:flutter/animation.dart';
 import 'package:ecomerce_app/src/data/api_repository/odoo_product_service.dart';
+import 'package:ecomerce_app/src/data/api_repository/odooOrderService.dart';
+
 import 'package:ecomerce_app/src/data/api_repository/odoo_service_enhanced.dart';
 import 'dart:math';
 
@@ -734,26 +736,92 @@ Future<bool> _mostrarConfirmacionEliminar(BuildContext context) async {
             width: double.infinity,
             height: 45,
             child: ElevatedButton(
-              onPressed: () {
-                
-                if (_articulos.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Agregue al menos un artículo")));
-                  return;
-                }
-                
-                final nuevaOrden = Order(
-                  id: DateTime.now().millisecondsSinceEpoch.toString(),
-                  date: DateTime.now(),
-                  total: totalPagar,
-                  status: _estadoSeleccionado,
-                );
+              onPressed: () async {
+  if (_articulos.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Agregue al menos un artículo")));
+    return;
+  }
+  
+  // ✅ MOSTRAR LOADING
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => const Center(
+      child: CircularProgressIndicator(),
+    ),
+  );
 
-                widget.onOrdenCreada(nuevaOrden, _selectedCustomer!, _articulos);
-                _limpiarDraft();
-                Navigator.pop(context);
-              },
+  try {
+    // ✅ 1. PREPARAR DATOS PARA ODDO
+    final orderLines = _articulos.map((articulo) {
+      return {
+        'product_id': articulo.id,
+        'quantity': articulo.cantidad,
+        'price_unit': articulo.precio,
+      };
+    }).toList();
 
+    // ✅ 2. CREAR ORDEN EN ODDO CON FLUJO AUTOMÁTICO
+    final odooService = OdooServiceEnhanced(
+      baseUrl: 'https://pointsalesqa.tailorw.net',
+      dbName: 'pointsales_prodv18',
+    );
+    
+    await odooService.login('admin', 'admin');
+    final orderService = OdooOrderService(odooService);
+    
+    final result = await orderService.createSaleOrder(
+      partnerId: _selectedCustomer!.id!,
+      orderLines: orderLines,
+    );
+
+    // ✅ 3. CERRAR LOADING
+    Navigator.pop(context);
+
+    if (result['success'] == true) {
+      print('🎉 Orden creada exitosamente en Odoo - ID: ${result['order_id']}');
+      
+      // ✅ 4. CREAR ORDEN LOCAL PARA LA APP
+      final nuevaOrden = Order(
+        id: result['order_id'].toString(),
+        date: DateTime.now(),
+        total: totalPagar,
+        status: 'draft', // Estado inicial de Odoo
+      );
+
+      // ✅ 5. NOTIFICAR Y CERRAR
+      widget.onOrdenCreada(nuevaOrden, _selectedCustomer!, _articulos);
+      _limpiarDraft();
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("✅ Orden creada - Flujo automático iniciado"),
+          duration: Duration(seconds: 3),
+        ),
+      );
+      
+      Navigator.pop(context);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("❌ Error: ${result['error']}"),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+    
+  } catch (e) {
+    Navigator.pop(context); // Cerrar loading
+    print('❌ Error creando orden: $e');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("❌ Error: $e"),
+        backgroundColor: Colors.red,
+      ),
+    );
+  }
+},
 
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.green,
