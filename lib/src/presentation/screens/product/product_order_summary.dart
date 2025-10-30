@@ -3,29 +3,45 @@ import 'package:flutter/material.dart';
 import 'package:ecomerce_app/src/domain/models/users_model.dart';
 import 'package:ecomerce_app/src/presentation/components/custon_form/custon_button.dart';
 import 'package:ecomerce_app/src/domain/models/products_model.dart';
-import 'package:ecomerce_app/src/presentation/components/custon_appbar/custon_appbar.dart';
+import 'package:ecomerce_app/src/domain/models/customer_model.dart';
+
 import 'package:ecomerce_app/src/presentation/components/botton_navigation_bar/circle_navbar.dart'; // Importar el CustomCircleNavBar
 
 class OrderSummary extends StatelessWidget {
   final List<Product> selectedProducts;
-  final User selectedUser;
+  final User? selectedUser;
+  final Customer? selectedCustomer;
 
-  const OrderSummary({Key? key, required this.selectedProducts, required this.selectedUser}) : super(key: key);
+  const OrderSummary({
+    Key? key, 
+    required this.selectedProducts, 
+    required this.selectedUser, 
+    required this.selectedCustomer
+  }) : super(key: key);
 
   double get totalPrice {
     return selectedProducts.fold(0, (sum, product) {
-      return sum + (product.price! * product.quantity);
+      return sum + (product.price * product.quantity);
     });
+  }
+
+  String get customerName {
+    if (selectedCustomer != null) {
+      return selectedCustomer!.name;
+    } else if (selectedUser != null) {
+      return selectedUser!.name?.firstname ?? selectedUser!.username;
+    }
+    return 'Cliente no especificado';
   }
 
   void _handleConfirm(BuildContext context) {
     // Guardar la orden en el historial de compras
     final purchase = {
-      'user': selectedUser.name?.firstname ?? '',
+      'user': customerName,
       'products': selectedProducts.map((product) => {
         'title': product.title,
-        'image': product.image,
-        'description': product.description,
+        'image': product.image??'',
+        'description': product.description??'',
         'quantity': product.quantity,
         'price': product.price,
       }).toList(),
@@ -48,8 +64,7 @@ class OrderSummary extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const CustonAppBar(),
-            const SizedBox(height: 20),
+           const SizedBox(height: 20),
             CustomBarRow( 
                 title: 'Orden de compra',
                 onBackButtonPressed: () {
@@ -66,27 +81,27 @@ class OrderSummary extends StatelessWidget {
                     margin: const EdgeInsets.symmetric(vertical: 8.0),
                     child: Column(
                       children: [
-                        ListTile(
+                           ListTile(
                           leading: Image.network(
-                            product.image ?? 'https://via.placeholder.com/150',
+                            product.image!,
                             width: 50,
                             height: 50,
                             fit: BoxFit.cover,
                           ),
-                          title: Text(product.title ?? 'Producto sin nombre'),
+                          title: Text(product.title),
                           subtitle: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text('Cantidad: ${product.quantity}'),
                               const SizedBox(height: 10),
                               Text(
-                                '${product.description ?? 'Sin descripción'}',
-                                style: TextStyle(color: Colors.grey),
+                                product.description ?? 'Sin descripción',
+                                style: const TextStyle(color: Colors.grey),
                               ),
                             ],
                           ),
                           trailing: Text(
-                            '\$${(product.price! * product.quantity).toStringAsFixed(2)}',
+                            '\$${(product.price * product.quantity).toStringAsFixed(2)}',
                             style: const TextStyle(fontSize: 16, color: Colors.green),
                           ),
                         ),

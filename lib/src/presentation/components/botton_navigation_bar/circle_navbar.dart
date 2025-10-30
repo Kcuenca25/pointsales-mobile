@@ -24,6 +24,7 @@ class CustomCircleNavBar extends StatelessWidget {
         Icon(Icons.add_shopping_cart, color: Colors.white),
         Icon(Icons.file_copy_outlined, color: Colors.white),
         Icon(Icons.person_2_outlined, color: Colors.white),
+        Icon(Icons.map_outlined, color: Colors.white), 
       ],
       inactiveIcons: const [
         Icon(Icons.home, color: Colors.grey),
@@ -31,6 +32,8 @@ class CustomCircleNavBar extends StatelessWidget {
         Icon(Icons.add_shopping_cart, color: Colors.grey),
         Icon(Icons.file_copy_outlined, color: Colors.grey),
         Icon(Icons.person_2_outlined, color: Colors.grey),
+        Icon(Icons.map_outlined, color: Colors.grey),
+        
       ],
       height: 60,
       circleWidth: 60,

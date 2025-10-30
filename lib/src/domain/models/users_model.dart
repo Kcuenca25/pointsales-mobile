@@ -1,56 +1,59 @@
 import 'dart:convert';
 
 class User {
-  Address? address;
   int? id;
-  String? email;
-  String? username;
-  String? password;
-  Name? name;
-  String? phone;
-  int? v;
+  String username;
+  String email;
+  String password;
+  String? token;
+  Name? name;  // Añadir esta propiedad
+  String? phone;  // Añadir esta propiedad
+  Address? address;  // Añadir esta propiedad
 
-  User({
-    this.address,
+   User({
     this.id,
-    this.email,
-    this.username,
-    this.password,
+    required this.username,
+    required this.email,
+    required this.password,
+    this.token,
     this.name,
     this.phone,
-    this.v,
+    this.address,
   });
 
   Map<String, dynamic> toMap() {
     return {
-      'address': address?.toMap(),
       'id': id,
-      'email': email,
       'username': username,
+      'email': email,
       'password': password,
+      'token': token,
       'name': name?.toMap(),
       'phone': phone,
-      'v': v,
+      'address': address?.toMap(),
     };
   }
 
+
   factory User.fromMap(Map<String, dynamic> map) {
     return User(
-      address: map['address'] != null ? Address.fromMap(map['address']) : null,
       id: map['id']?.toInt(),
-      email: map['email'],
-      username: map['username'],
-      password: map['password'],
+      username: map['username'] ?? '',
+      email: map['email'] ?? '',
+      password: map['password'] ?? '',
+      token: map['token'],
       name: map['name'] != null ? Name.fromMap(map['name']) : null,
       phone: map['phone'],
-      v: map['v']?.toInt(),
+      address: map['address'] != null ? Address.fromMap(map['address']) : null,
     );
   }
+
 
   String toJson() => json.encode(toMap());
 
   factory User.fromJson(String source) => User.fromMap(json.decode(source));
 }
+
 
 class Address {
   Geolocation? geolocation;

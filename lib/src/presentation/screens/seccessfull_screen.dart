@@ -1,4 +1,3 @@
-import 'package:ecomerce_app/src/presentation/components/botton_navigation_bar/circle_navbar.dart';
 import 'package:flutter/material.dart';
 
 class SuccessfullScreen extends StatelessWidget {
@@ -44,20 +43,6 @@ class SuccessfullScreen extends StatelessWidget {
             ),
           ],
         ),
-      ),
-      bottomNavigationBar: CustomCircleNavBar(
-        selectedIndex: 2, 
-        onItemTapped: (index) {
-          if (index == 0) {
-            Navigator.pushReplacementNamed(context, '/home');
-          } else if (index == 1) {
-            Navigator.pushReplacementNamed(context, '/users');
-          } else if (index == 2) {
-            Navigator.pushReplacementNamed(context, '/products');
-          } else if (index == 3) {
-            Navigator.pushReplacementNamed(context, '/purchase_history'); 
-          }
-        },
       ),
     );
   }

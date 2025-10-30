@@ -1,8 +1,6 @@
-import 'package:ecomerce_app/src/presentation/components/custon_appbar/custon_appbar.dart';
 import 'package:ecomerce_app/src/presentation/components/custon_bar_row/custon_bar_row.dart';
 import 'package:ecomerce_app/src/presentation/screens/product/product_new_order_buy.dart';
 import 'package:flutter/material.dart';
-import 'package:ecomerce_app/src/presentation/components/botton_navigation_bar/circle_navbar.dart';
 
 class PurchaseHistory extends StatelessWidget {
   final List<Map<String, dynamic>> purchaseHistory;
@@ -17,7 +15,6 @@ class PurchaseHistory extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const CustonAppBar(),
             const SizedBox(height: 20),
             CustomBarRow(
               title: 'Historial de compras',
@@ -64,28 +61,7 @@ class PurchaseHistory extends StatelessWidget {
           ],
         ),
       ),
-      bottomNavigationBar: CustomCircleNavBar(
-        selectedIndex: 3,
-        onItemTapped: (index) {
-          switch (index) {
-            case 0:
-              Navigator.pushReplacementNamed(context, '/home_screen');
-              break;
-            case 1:
-              Navigator.pushReplacementNamed(context, '/client_screen');
-              break;
-            case 2:
-              Navigator.pushReplacementNamed(context, '/car_shop_screen');
-              break;
-            case 3:
-              Navigator.pushReplacementNamed(context, '/purchase_history');
-              break;
-            case 4:
-              Navigator.pushReplacementNamed(context, '/profile_screen');
-              break;
-          }
-        },
-      ),
+
     );
   }
 }

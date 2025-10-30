@@ -19,46 +19,46 @@ class UserPage extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(18.0),
           child: Column(
-            children: [
-              const CustonAppBar(),
-              const SizedBox(height: 20),
-              CustomBarRow(
-                title: 'Ordenes de compra',
-                onBackButtonPressed: () {
-                  Navigator.pop(context);
-                },
-                backgroundColor: Colors.blueAccent,
-                textColor: Colors.black,
-              ),
-              const SizedBox(height: 8),
-              CircleAvatar(
-                radius: 40,
-                backgroundColor: Colors.blueAccent,
-                child: Text(
-                  '${usuario.name?.firstname?.substring(0, 1) ?? ''}${usuario.name?.lastname?.substring(0, 1) ?? ''}', // Iniciales
-                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                ),
-              ),
-              const SizedBox(height: 20),
-              Text('${usuario.name?.firstname} ${usuario.name?.lastname}', style: const TextStyle(fontSize: 24)),
-              Text('${usuario.username ?? ''}', style: const TextStyle(color: Colors.grey)),
-              Text('${usuario.phone ?? ''}', style: const TextStyle(color: Colors.grey)),
-              const SizedBox(height: 20),
-              CustomElevatedButton(
-                text: 'Nueva orden de compra',
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => CarShopScreen(
-                        selectedIndex: 2,
-                        onProductListNavigate: onProductListNavigate, 
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ],
+            // children: [
+            //   const CustonAppBar(),
+            //   const SizedBox(height: 20),
+            //   CustomBarRow(
+            //     title: 'Ordenes de compra',
+            //     onBackButtonPressed: () {
+            //       Navigator.pop(context);
+            //     },
+            //     backgroundColor: Colors.blueAccent,
+            //     textColor: Colors.black,
+            //   ),
+            //   const SizedBox(height: 8),
+            //   CircleAvatar(
+            //     radius: 40,
+            //     backgroundColor: Colors.blueAccent,
+            //     child: Text(
+            //       '${usuario.name?.firstname?.substring(0, 1) ?? ''}${usuario.name?.lastname?.substring(0, 1) ?? ''}', // Iniciales
+            //       style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            //     ),
+            //   ),
+            //   const SizedBox(height: 20),
+            //   Text('${usuario.name?.firstname} ${usuario.name?.lastname}', style: const TextStyle(fontSize: 24)),
+            //   Text('${usuario.username ?? ''}', style: const TextStyle(color: Colors.grey)),
+            //   Text('${usuario.phone ?? ''}', style: const TextStyle(color: Colors.grey)),
+            //   const SizedBox(height: 20),
+            //   CustomElevatedButton(
+            //     text: 'Nueva orden de compra',
+            //     onPressed: () {
+            //       Navigator.push(
+            //         context,
+            //         MaterialPageRoute(
+            //           builder: (context) => CarShopScreen(
+            //             selectedIndex: 2,
+            //             onProductListNavigate: onProductListNavigate, 
+            //           ),
+            //         ),
+            //       );
+            //     },
+            //   ),
+            // ],
           ),
         ),
       ),

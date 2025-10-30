@@ -1,7 +1,5 @@
-import 'package:ecomerce_app/src/presentation/components/custon_appbar/custon_appbar.dart';
 import 'package:ecomerce_app/src/presentation/screens/settings.dart';
 import 'package:flutter/material.dart';
-import 'package:ecomerce_app/src/presentation/components/botton_navigation_bar/circle_navbar.dart'; // Importar el CustomCircleNavBar
 
 void main() => runApp(const ProfileScreen());
 
@@ -16,7 +14,6 @@ class ProfileScreen extends StatelessWidget {
           padding: const EdgeInsets.all(18.0),
           child: Column(
             children: [
-              const CustonAppBar(),
               const SizedBox(height: 20),
               const Card(
                 color: Colors.white,
@@ -169,20 +166,7 @@ class ProfileScreen extends StatelessWidget {
           ),
         ),
       ),
-      bottomNavigationBar: CustomCircleNavBar(
-        selectedIndex: 4, 
-        onItemTapped: (index) {
-          if (index == 0) {
-            Navigator.pushReplacementNamed(context, '/home');
-          } else if (index == 1) {
-            Navigator.pushReplacementNamed(context, '/users');
-          } else if (index == 2) {
-            Navigator.pushReplacementNamed(context, '/products');
-          } else if (index == 3) {
-            Navigator.pushReplacementNamed(context, '/purchase_history');
-          }
-        },
-      ),
+
     );
   }
 

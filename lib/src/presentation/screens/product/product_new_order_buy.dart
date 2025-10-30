@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:ecomerce_app/src/domain/models/users_model.dart';
 import 'package:ecomerce_app/src/presentation/components/botton_navigation_bar/circle_navbar.dart';
-import 'package:ecomerce_app/src/presentation/components/custon_appbar/custon_appbar.dart';
 import 'package:ecomerce_app/src/presentation/components/custon_bar_row/custon_bar_row.dart';
 import 'package:ecomerce_app/src/presentation/components/custon_form/custon_button.dart';
 import 'package:ecomerce_app/src/presentation/components/custon_select/user_select.dart';
@@ -80,7 +79,6 @@ class _ProductNewOrderBuyState extends State<ProductNewOrderBuy> with WidgetsBin
         padding: const EdgeInsets.all(18.0),
         child: Column(
           children: [
-            const CustonAppBar(),
             const SizedBox(height: 20),
             CustomBarRow( 
                 title: 'Nueva orden de compra',

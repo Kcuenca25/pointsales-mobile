@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-
-import 'package:ecomerce_app/src/presentation/components/custon_appbar/custon_appbar.dart';
 import 'package:ecomerce_app/src/presentation/screens/forms/form_change_password.dart';
 
 void main() => runApp(const SettingsPage());
@@ -16,7 +14,6 @@ class SettingsPage extends StatelessWidget {
           padding: const EdgeInsets.all(18.0),
           child: Column(
             children: [
-              const CustonAppBar(),
               const SizedBox(height: 20),
               Card(
                 color: Colors.white,
