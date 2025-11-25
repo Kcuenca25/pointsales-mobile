@@ -35,7 +35,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
       print('🚀 Iniciando carga de clientes...');
       
       final odooService = OdooServiceEnhanced(
-        baseUrl: 'https://pointsalesqa.tailorw.net',
+        baseUrl: 'https://solutions.tailorw.net',
         dbName: 'pointsales_prodv18',
       );
       
@@ -69,8 +69,6 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
     }
   }
 
- 
-
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
@@ -80,7 +78,7 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
           children: [
             const SizedBox(height: 10),
             
-            // ✅ CARDS PRINCIPALES - CON PRIMER CLIENTE REAL
+            // ✅ SOLO LAS CARDS PRINCIPALES - CON PRIMER CLIENTE REAL
             FutureBuilder<List<Customer>>(
               future: futureCustomers,
               builder: (context, snapshot) {
@@ -107,166 +105,11 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
                 );
               },
             ),
-            const SizedBox(height: 30),
             
-            // ✅ SECCIÓN DE CLIENTES RECIENTES
-            FutureBuilder<List<Customer>>(
-              future: futureCustomers,
-              builder: (context, snapshot) {
-                print('🔄 FutureBuilder estado: ${snapshot.connectionState}');
-                print('📊 FutureBuilder datos: ${snapshot.hasData}');
-                print('❌ FutureBuilder error: ${snapshot.error}');
-                
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Column(
-                    children: [
-                      Center(child: CircularProgressIndicator()),
-                      SizedBox(height: 10),
-                      Text('Cargando clientes...'),
-                    ],
-                  );
-                }
-                
-                if (snapshot.hasError) {
-                  return Column(
-                    children: [
-                      Text(
-                        'Error: ${snapshot.error}',
-                        style: const TextStyle(color: Colors.red),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 10),
-                      ElevatedButton(
-                        onPressed: () {
-                          setState(() {
-                            futureCustomers = _loadCustomers();
-                          });
-                        },
-                        child: const Text('Reintentar'),
-                      ),
-                    ],
-                  );
-                }
-                
-                if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                  return Column(
-                    children: [
-                      const Text(
-                        'No hay clientes disponibles',
-                        style: TextStyle(color: Colors.grey),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 10),
-                      ElevatedButton(
-                        onPressed: () {
-                          setState(() {
-                            futureCustomers = _loadCustomers();
-                          });
-                        },
-                        child: const Text('Recargar'),
-                      ),
-                    ],
-                  );
-                }
-                
-                final customers = snapshot.data!;
-                
-                return Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Clientes Recientes',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.refresh),
-                          onPressed: () {
-                            setState(() {
-                              futureCustomers = _loadCustomers();
-                            });
-                          },
-                        ),
-                      ],
-                    ),
-                    
-                    const SizedBox(height: 10),
-                    
-                    // ✅ LISTA DE CLIENTES
-                    ...customers.map((customer) => _buildCustomerListItem(customer)),
-                    
-                    const SizedBox(height: 20),
-                    
-                    ElevatedButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => ClientScreen(
-                              onCustomerPageNavigate: widget.onUserPageNavigate,
-                            ),
-                          ),
-                        );
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.grey[300],
-                        foregroundColor: Colors.black,
-                        minimumSize: const Size(double.infinity, 50),
-                      ),
-                      child: const Text('Ver todos los clientes'),
-                    ),
-                  ],
-                );
-              },
-            ),
+            const SizedBox(height: 30),
+                        
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildCustomerListItem(Customer customer) {
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: Colors.deepPurple[100],
-          child: Text(
-            customer.name[0].toUpperCase(),
-            style: const TextStyle(color: Colors.deepPurple),
-          ),
-        ),
-        title: Text(customer.name),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (customer.email != null && customer.email!.isNotEmpty)
-              Text(
-                customer.email!,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            if (customer.phone != null && customer.phone!.isNotEmpty)
-              Text(
-                customer.phone!,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-          ],
-        ),
-        trailing: IconButton(
-          icon: const Icon(Icons.shopping_cart, color: Colors.deepPurple),
-          onPressed: () {
-            widget.onUserPageNavigate(customer);
-          },
-        ),
-        onTap: () {
-          widget.onUserPageNavigate(customer);
-        },
       ),
     );
   }

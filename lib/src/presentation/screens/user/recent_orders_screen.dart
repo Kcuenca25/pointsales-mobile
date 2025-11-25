@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:ecomerce_app/src/presentation/screens/user/new_orden_page.dart';
 import 'package:ecomerce_app/src/domain/models/customer_model.dart';
+import 'package:ecomerce_app/src/domain/models/products_model.dart';
 import 'package:ecomerce_app/src/presentation/components/custon_appbar/appDrawer.dart';
 import 'package:ecomerce_app/src/presentation/components/custon_appbar/custon_appbar.dart';
 import 'package:ecomerce_app/src/presentation/screens/user/home_screen.dart';
@@ -8,6 +9,9 @@ import 'package:ecomerce_app/src/presentation/components/botton_navigation_bar/c
 import 'package:ecomerce_app/src/presentation/screens/botton_navigation_bar_screen/02-client_screen.dart';
 import 'package:ecomerce_app/src/data/api_repository/odooOrderService.dart';
 import 'package:ecomerce_app/src/data/api_repository/odoo_service_enhanced.dart';
+import 'package:ecomerce_app/src/data/api_repository/odoo_product_service.dart';
+import 'package:ecomerce_app/src/services/service_company.dart';
+
 
 
 //VENTANA DE ORDENES DE VENTA
@@ -33,6 +37,7 @@ class _RecentOrdersScreenState extends State<RecentOrdersScreen> {
   String _ordenFecha = "DESC";
   int _selectedIndex = 2;
   int _resultadosCount = 0;
+  late OdooProductService _productService;
 
   // 🎯 CREA UNA COPIA MUTABLE DE LAS ÓRDENES
   List<Map<String, dynamic>> _ordenesLocales = [];
@@ -40,11 +45,32 @@ class _RecentOrdersScreenState extends State<RecentOrdersScreen> {
  @override
   void initState() {
     super.initState();
-    // 🎯 INICIALIZA CON LAS ÓRDENES DEL WIDGET
     _ordenesLocales = List<Map<String, dynamic>>.from(widget.recentOrders);
     _resultadosCount = _ordenesLocales.length;
-    _cargarOrdenesDesdeOdoo(); // Cargar datos actualizados
+    _initializeServices();
+    _cargarOrdenesDesdeOdoo(); 
+    //_ensureCompanyServiceInitialized();
+
   }
+
+ void _initializeServices() {
+    final companyService = CompanyService();
+    
+    // ✅ USAR LA MISMA INSTANCIA DE ODDO SERVICE
+    final odooService = companyService.odooService;
+    
+    if (odooService != null) {
+      _productService = OdooProductService(odooService);
+    } else {
+      // Fallback si no está inicializado
+      final fallbackService = OdooServiceEnhanced(
+        baseUrl: 'https://solutions.tailorw.net',
+        dbName: 'pointsales_prodv18',
+      );
+      _productService = OdooProductService(fallbackService);
+    }
+  }
+
   void _agregarOrden(Map<String, dynamic> nuevaOrden) {
     setState(() {
       final ordenCompleta = {
@@ -75,49 +101,121 @@ void _verificarEstadosOrdenes() {
     print('  ---');
   }
 }
-
+//*-----------------------------------------------------------------------------------------------------------------
 
   // 🎯 ACTUALIZA _cargarOrdenesDesdeOdoo
+
   Future<void> _cargarOrdenesDesdeOdoo() async {
     try {
-      final odooService = OdooServiceEnhanced(
-        baseUrl: 'https://pointsalesqa.tailorw.net',
-        dbName: 'pointsales_prodv18',
-      );
+      final companyService = CompanyService();
+      final odooService = companyService.odooService;
       
-      bool isAuthenticated = await odooService.login('admin', 'admin');
-      
-      if (isAuthenticated) {
-        final orderService = OdooOrderService(odooService);
-        final ordenesOdoo = await orderService.getSaleOrders();
-        
-         setState(() {
-      _ordenesLocales = ordenesOdoo.map((ordenOdoo) {
-        return {
-          'orden': ordenOdoo['id'].toString(),
-          'cliente': ordenOdoo['partner_id'] is List 
-              ? (ordenOdoo['partner_id'][1] as String) 
-              : 'Cliente Odoo',
-          'fecha': ordenOdoo['date_order'],
-          'estado': _getEstadoVisual(ordenOdoo),
-          'state_odoo': ordenOdoo['state'],
-          'invoice_status': ordenOdoo['invoice_status'],
-          'note': ordenOdoo['note'],
-          'total': (ordenOdoo['amount_total'] as num).toDouble(),
-          'referencia_odoo': ordenOdoo['name'],
-        };
-      }).toList();
-      
-      _resultadosCount = _ordenesLocales.length;
-    });
-    
-            _verificarEstadosOrdenes();
-
-        //print('✅ Órdenes cargadas desde Odoo: ${ordenesOdoo.length}');
+      if (odooService == null) {
+        print('❌ OdooService no inicializado en CompanyService');
+        return;
       }
+      
+      // ✅ USAR LA MISMA INSTANCIA, NO CREAR UNA NUEVA
+      final orderService = OdooOrderService(odooService);
+      final ordenesOdoo = await orderService.getSaleOrders();
+      
+      setState(() {
+        _ordenesLocales = ordenesOdoo.map((ordenOdoo) {
+          return {
+            'orden': ordenOdoo['id'].toString(),
+            'cliente': ordenOdoo['partner_id'] is List 
+                ? (ordenOdoo['partner_id'][1] as String) 
+                : 'Cliente Odoo',
+            'fecha': ordenOdoo['date_order'],
+            'estado': _getEstadoVisual(ordenOdoo),
+            'state_odoo': ordenOdoo['state'],
+            'invoice_status': ordenOdoo['invoice_status'],
+            'note': ordenOdoo['note'],
+            'total': (ordenOdoo['amount_total'] as num).toDouble(),
+            'referencia_odoo': ordenOdoo['name'],
+          };
+        }).toList();
+        
+        _resultadosCount = _ordenesLocales.length;
+      });
+      
+      _verificarEstadosOrdenes();
+      
     } catch (e) {
       print('❌ Error cargando órdenes: $e');
     }
+  }
+
+  
+// En tu pantalla de ventas - validar antes de vender
+Future<bool> validateProductForSale(int productId, double quantity) async {
+    try {
+      final product = await _productService.getProductDetails(productId);
+      
+      if (product == null) {
+        _showError('Producto no encontrado en sistema');
+        return false;
+      }
+      
+      // 🎯 VERIFICAR SI EL PRODUCTO TIENE STOCK
+      if (product.stockQuantity < quantity) {
+        _showError('Stock insuficiente. Disponible: ${product.stockQuantity}');
+        return false;
+      }
+      
+      return true;
+    } catch (e) {
+      _showError('Error validando producto: $e');
+      return false;
+    }
+  }
+  // ✅ MÉTODO PARA MOSTRAR ERRORES
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('❌ $message'),
+        backgroundColor: Colors.red,
+        duration: Duration(seconds: 3),
+      ),
+    );
+  }
+  
+  // ✅ MÉTODO PARA BUSCAR PRODUCTO POR CÓDIGO DE BARRAS
+  Future<void> _searchProductByBarcode(String barcode) async {
+    try {
+      final product = await _productService.getProductByBarcode(barcode);
+      
+      if (product != null) {
+        // Producto encontrado, puedes proceder con la venta
+        _showSuccess('Producto encontrado: ${product.name}');
+        
+        // Validar stock antes de agregar al carrito
+        final isValid = await validateProductForSale(product.id, 1.0);
+        if (isValid) {
+          // Agregar al carrito de ventas
+          _addToCart(product);
+        }
+      } else {
+        _showError('Producto no encontrado con código: $barcode');
+      }
+    } catch (e) {
+      _showError('Error buscando producto: $e');
+    }
+  }
+  
+  void _showSuccess(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('✅ $message'),
+        backgroundColor: Colors.green,
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+  
+  void _addToCart(Product product) {
+    // 🎯 IMPLEMENTAR LÓGICA PARA AGREGAR AL CARRITO
+    print('🛒 Agregando al carrito: ${product.name}');
   }
 
 //--------------PRUEBA------------------------------------------------------

@@ -14,6 +14,10 @@ import 'package:ecomerce_app/src/config/api_config.dart';
 
 import 'package:ecomerce_app/src/presentation/components/botton_navigation_bar/circle_navbar.dart';
 
+import 'package:ecomerce_app/src/services/cache_service.dart';
+import 'package:ecomerce_app/src/services/connectivity_service.dart';
+
+
 class ClientScreen extends StatefulWidget {
   final Function(Customer) onCustomerPageNavigate;
 
@@ -51,47 +55,140 @@ class _ClientScreenState extends State<ClientScreen> {
   }
 
  Future<void> _loadCustomers() async {
-    try {
-      final odooService = OdooServiceEnhanced(
-        baseUrl: ApiConfig.baseUrl,
-        dbName: ApiConfig.dbName,
-      );
+  final tieneInternet = await ConnectivityService.hasInternet();
+  
+  if (tieneInternet) {
+    // ✅ CON INTERNET: Cargar de Odoo + actualizar caché
+    await _loadCustomersFromOdoo();
+  } else {
+    // 🔴 SIN INTERNET: Usar caché local
+    await _loadCustomersFromCache();
+  }
+}
+
+Future<void> _loadCustomersFromOdoo() async {
+  try {
+    print('🔵 Modo Online - Cargando clientes...');
+    
+    final odooService = OdooServiceEnhanced(
+      baseUrl: ApiConfig.baseUrl,
+      dbName: ApiConfig.dbName,
+    );
+    
+    bool isAuthenticated = await odooService.login('admin', 'admin');
+    
+    if (isAuthenticated) {
+      final customerService = OdooCustomerService(odooService);
+      final allCustomers = await customerService.getCustomers(limit: 100);
       
-      bool isAuthenticated = await odooService.login('admin', 'admin');
+      // ✅ GUARDAR EN CACHÉ
+      await CacheService.saveCustomers(allCustomers);
       
-      if (isAuthenticated) {
-        final customerService = OdooCustomerService(odooService);
-        // ✅ MOSTRAR TODOS LOS CLIENTES (PERSONAS Y EMPRESAS)
-        final allCustomers = await customerService.getCustomers(limit: 100);
+      setState(() {
+        customerList = allCustomers;
+        filteredCustomers = allCustomers;
         
-        setState(() {
-          customerList = allCustomers; // ✅ TODOS LOS CLIENTES
-          filteredCustomers = allCustomers;
-          
-          azCustomerList = allCustomers.map((customer) {
-            return _AZCustomer(customer: customer, name: customer.name);
-          }).toList();
-          
-          filteredAzCustomers = List.from(azCustomerList);
-          _isLoading = false;
-        });
+        azCustomerList = allCustomers.map((customer) {
+          return _AZCustomer(customer: customer, name: customer.name);
+        }).toList();
         
-        print('✅ Clientes cargados: ${allCustomers.length} (personas + empresas)');
-        
-        // ✅ DEBUG: Mostrar estadísticas
-        final individuals = allCustomers.where((c) => !c.isCompany).length;
-        final companies = allCustomers.where((c) => c.isCompany).length;
-        print('   👥 Personas: $individuals');
-        print('   🏢 Empresas: $companies');
+        filteredAzCustomers = List.from(azCustomerList);
+        _isLoading = false;
+      });
+      
+      print('✅ ${allCustomers.length} clientes cargados desde Odoo y guardados en caché');
+      
+      // Estadísticas
+      final individuals = allCustomers.where((c) => !c.isCompany).length;
+      final companies = allCustomers.where((c) => c.isCompany).length;
+      print('   👥 Personas: $individuals');
+      print('   🏢 Empresas: $companies');
+    }
+  } catch (e) {
+    print('❌ Error cargando clientes de Odoo: $e');
+    // Fallback: intentar cargar del caché
+    await _loadCustomersFromCache();
+  }
+}
+
+
+Future<void> _loadCustomersFromCache() async {
+  print('🔴 [DEBUG] _loadCustomersFromCache INICIADO');
+  
+  try {
+    print('${_getTimestamp()} 🔴 Modo Offline - Cargando clientes del caché...');
+    
+    final clientesCache = await CacheService.getCachedCustomers();
+    
+    print('🔴 [DEBUG] Clientes del caché: ${clientesCache.length}');
+    
+    if (clientesCache.isNotEmpty) {
+      // ✅ SNACKBAR VISUAL
+      print('🔴 [DEBUG] Intentando mostrar SnackBar...');
+      if (mounted) {
+        print('🔴 [DEBUG] Widget está mounted, mostrando SnackBar');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.wifi_off, size: 20, color: Colors.orange),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text('📦 ${clientesCache.length} clientes cargados del caché'),
+                ),
+              ],
+            ),
+            duration: Duration(seconds: 4),
+            backgroundColor: Colors.orange[800],
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        print('🔴 [DEBUG] SnackBar mostrado exitosamente');
+      } else {
+        print('🔴 [DEBUG] Widget NO está mounted, no se puede mostrar SnackBar');
       }
-    } catch (e) {
-      print('❌ Error loading customers: $e');
+      
+      // ✅ ACTUALIZAR TODAS LAS LISTAS
+      setState(() {
+        customerList = clientesCache;
+        filteredCustomers = clientesCache;
+        
+        // ✅ ACTUALIZAR LAS LISTAS AZ QUE SE USAN EN LA UI
+        azCustomerList = clientesCache.map((customer) {
+          return _AZCustomer(customer: customer, name: customer.name);
+        }).toList();
+        
+        filteredAzCustomers = List.from(azCustomerList);
+        _isLoading = false;
+      });
+      
+      print('🔴 [DEBUG] Listas actualizadas:');
+      print('   customerList: ${customerList.length}');
+      print('   filteredCustomers: ${filteredCustomers.length}');
+      print('   azCustomerList: ${azCustomerList.length}');
+      print('   filteredAzCustomers: ${filteredAzCustomers.length}');
+      
+      print('${_getTimestamp()} ✅ ${clientesCache.length} clientes cargados del caché');
+    } else {
+      print('🔴 [DEBUG] No hay clientes en caché');
       setState(() {
         _isLoading = false;
       });
     }
+  } catch (e) {
+    print('❌ Error cargando clientes del caché: $e');
+    setState(() {
+      _isLoading = false;
+    });
   }
+  
+  print('🔴 [DEBUG] _loadCustomersFromCache FINALIZADO');
+}
 
+
+String _getTimestamp() {
+  return '[${DateTime.now().hour}:${DateTime.now().minute}:${DateTime.now().second}]';
+}
   void filterCustomers(String query) {
     if (query.isEmpty) {  
       setState(() {
@@ -504,4 +601,5 @@ class CustomerInfoPage extends StatelessWidget {
       ),
     );
   }
+  
 }

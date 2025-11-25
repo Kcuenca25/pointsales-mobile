@@ -398,7 +398,7 @@ class _FormScreenState extends State<FormScreen> {
                                     children: [
                                       CircularProgressIndicator(),
                                       SizedBox(height: 10),
-                                      Text('Conectando con Odoo...'),
+                                      Text('Conectando ...'),
                                     ],
                                   ),
                                 ),

@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart'; // ✅ AGREGAR ESTA IMPORTACIÓN
-import 'dart:convert';
+import 'package:flutter/material.dart'; 
+//import 'dart:convert';
 
 class Product {
   final int id;
@@ -14,7 +14,8 @@ class Product {
   final String? description;
   final List<dynamic>? taxesIds; // Impuestos de venta
   final List<dynamic>? supplierTaxesIds; // Impuestos de compra
-  final String? category; // Alias para categ_id
+  final String? category;
+  final double stockQuantity;  // Alias para categ_id
   
   String get title => name;
   double get price => listPrice;
@@ -48,7 +49,49 @@ class Product {
     this.ratingCount,
     this.taxesIds,
     this.supplierTaxesIds,
+    this.stockQuantity = 0.0, 
   });
+
+    Product copyWith({
+    int? id,
+    String? name,
+    String? defaultCode,
+    String? barcode,
+    double? listPrice,
+    double? standardPrice,
+    String? type,
+    int? categoryId,
+    String? categoryName,
+    String? description,
+    String? category,
+    String? image,
+    double? ratingRate,
+    int? ratingCount,
+    List<dynamic>? taxesIds,
+    List<dynamic>? supplierTaxesIds,
+    double? stockQuantity,
+  }) {
+    return Product(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      defaultCode: defaultCode ?? this.defaultCode,
+      barcode: barcode ?? this.barcode,
+      listPrice: listPrice ?? this.listPrice,
+      standardPrice: standardPrice ?? this.standardPrice,
+      type: type ?? this.type,
+      categoryId: categoryId ?? this.categoryId,
+      categoryName: categoryName ?? this.categoryName,
+      description: description ?? this.description,
+      category: category ?? this.category,
+      image: image ?? this.image,
+      ratingRate: ratingRate ?? this.ratingRate,
+      ratingCount: ratingCount ?? this.ratingCount,
+      taxesIds: taxesIds ?? this.taxesIds,
+      supplierTaxesIds: supplierTaxesIds ?? this.supplierTaxesIds,
+      stockQuantity: stockQuantity ?? this.stockQuantity,
+    );
+  }
+
 
   // ✅ GETTER para tipo de producto legible
    String get typeDisplay {

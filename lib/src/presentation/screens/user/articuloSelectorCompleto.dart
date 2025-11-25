@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:ecomerce_app/src/domain/models/articulo.dart';
 import 'package:ecomerce_app/src/domain/models/products_model.dart';
 import 'package:ecomerce_app/src/data/api_repository/odoo_product_service.dart';
 import 'package:ecomerce_app/src/data/api_repository/odoo_service_enhanced.dart';
 
+import 'package:ecomerce_app/src/services/cache_service.dart';
+import 'package:ecomerce_app/src/services/connectivity_service.dart';
 
 
 class ArticuloSelectorScreen extends StatefulWidget {
@@ -24,99 +27,277 @@ class ArticuloSelectorScreen extends StatefulWidget {
 
 class _ArticuloSelectorScreenState extends State<ArticuloSelectorScreen> {
   final TextEditingController _searchController = TextEditingController();
-  String _searchQuery = '';
   final Map<int, int> _cantidadesAgregadas = {};
 
-  // Variables para productos Odoo
-  late Future<List<Product>> _futureProducts;
-  List<Product> _allProducts = [];
-  List<Product> _filteredProducts = [];
+  //  VARIABLES DE PAGINACIÓN CORREGIDAS
+    List<Product> _allProducts = [];
+  int _currentPage = 0;
+  final int _pageSize = 20;
+  bool _isLoading = false;
+  bool _hasMore = true;
+  String _currentSearchQuery = '';
+  Timer? _searchDebounceTimer;
 
-  // Variables para load more
-  final int _itemsPerLoad = 10;
-  int _visibleItems = 10;
-  bool _isLoadingMore = false;
+  // ❌ ELIMINAR VARIABLES DUPLICADAS O CONFLICTIVAS
+  // String _searchQuery = ''; // ← ELIMINAR
+  // late Future<List<Product>> _futureProducts; // ← ELIMINAR
+  // List<Product> _filteredProducts = []; // ← ELIMINAR
+  // final int _itemsPerLoad = 10; // ← ELIMINAR
+  // int _visibleItems = 10; // ← ELIMINAR
+  // bool _isLoadingMore = false; // ← ELIMINAR
 
-  // Controlador para mostrar/ocultar búsqueda
+  // Variables que SÍ se mantienen
   bool _mostrarBusqueda = false;
-
-  // Variables para filtros
   String _categoriaSeleccionada = 'Todas las categorías';
-  final Map<int, GlobalKey> _dismissibleKeys = {};
+  //final Map<int, GlobalKey> _dismissibleKeys = {};
 
   @override
   void initState() {
     super.initState();
     
-    // ✅ CARGAR PRODUCTOS DESDE ODDO
-    _futureProducts = _loadProductsFromOdoo();
-    
+    //  SOLO CARGAR PAGINACIÓN, NO FUTURE
+    _loadMoreProducts(reset: true);
+     
     _searchController.addListener(() {
-      setState(() => _searchQuery = _searchController.text);
+      _onSearchChanged(_searchController.text); 
     });
 
-    // ✅ INICIALIZAR CON PRODUCTOS SELECCIONADOS
+    // INICIALIZAR CON PRODUCTOS SELECCIONADOS
     for (var articulo in widget.articulosSeleccionadosIniciales) {
       _cantidadesAgregadas[articulo.id] = articulo.cantidad;
-      _dismissibleKeys[articulo.id] = GlobalKey();
+     // _dismissibleKeys[articulo.id] = GlobalKey();
     }
   }
 
-  // ✅ CARGAR PRODUCTOS DESDE ODDO
-  Future<List<Product>> _loadProductsFromOdoo() async {
+  @override
+  void dispose() {
+    _searchDebounceTimer?.cancel();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  // BÚSQUEDA CON DEBOUNCE
+  void _onSearchChanged(String query) {
+    _searchDebounceTimer?.cancel();
+    
+    _searchDebounceTimer = Timer(const Duration(milliseconds: 800), () {
+      if (mounted) {
+        _performSearch(query);
+      }
+    });
+  }
+
+  void _performSearch(String query) {
+    print('🔍 Ejecutando búsqueda: "$query"');
+    _loadMoreProducts(reset: true, searchQuery: query);
+  }
+
+  
+  // CARGAR PRODUCTOS CON PAGINACIÓN
+  Future<void> _loadMoreProducts({
+    bool reset = false, 
+    String searchQuery = ''
+  }) async {
+    if (_isLoading) return;
+    
+    setState(() {
+      _isLoading = true;
+      if (reset) {
+        _allProducts.clear();
+        _currentPage = 0;
+        _hasMore = true;
+        _currentSearchQuery = searchQuery;
+        print('🔄 Reiniciando lista - Búsqueda: "$searchQuery"');
+      }
+    });
+
     try {
-      print('🔄 Cargando productos desde Odoo...');
-      
       final odooService = OdooServiceEnhanced(
-        baseUrl: 'https://pointsalesqa.tailorw.net',
+        baseUrl: 'https://solutions.tailorw.net',
         dbName: 'pointsales_prodv18',
       );
       
-      bool isAuthenticated = await odooService.login('admin', 'admin');
+      await odooService.login('admin', 'admin');
+      final productService = OdooProductService(odooService);
       
-      if (isAuthenticated) {
-        final productService = OdooProductService(odooService);
-        final products = await productService.getProducts(limit: 50);
+      final result = await productService.getProductsPaginated(
+        page: _currentPage,
+        pageSize: _pageSize,
+        searchQuery: _currentSearchQuery,
+      );
+
+      if (mounted) {
+        setState(() {
+          _allProducts.addAll(result['products']);
+          _hasMore = result['hasMore'];
+          _currentPage++;
+          _isLoading = false;
+        });
+
+        print('✅ Página ${_currentPage - 1} cargada: ${result['products'].length} productos');
+        print('   Total en lista: ${_allProducts.length}, ¿Hay más?: $_hasMore');
         
-        print('✅ Productos cargados: ${products.length}');
-        for (var product in products) {
-          print('   📦 ${product.name} - \$${product.listPrice}');
+        if (reset && result['totalCount'] > 0) {
+          print('   📊 Total encontrado: ${result['totalCount']} productos');
         }
-        
-        if (mounted) {
-          setState(() {
-            _allProducts = products;
-            _filteredProducts = products;
-          });
-        }
-        
-        return products;
-      } else {
-        throw Exception('Error de autenticación con Odoo');
       }
     } catch (e) {
-      print('❌ Error cargando productos de Odoo: $e');
-      return [];
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+      print('❌ Error cargando productos: $e');
+      
+      // Mostrar error al usuario
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error cargando productos: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
-  // ✅ CONVERTIR PRODUCT ODDO A ARTICULOITEM
-  // ✅ CONVERTIR PRODUCT ODDO A ARTICULOITEM CON VERIFICACIONES
-ArticuloItem _productToArticuloItem(Product product) {
-  return ArticuloItem(
-    id: product.id,
-    nombre: product.name, // ✅ name es required
-    categoria: product.categoryName ?? 'Sin categoría', // ✅ USAR ??
-    subcategoria: product.typeDisplay, // ✅ typeDisplay es seguro
-    precio: product.listPrice, // ✅ listPrice es required
-    descripcion: product.description ?? product.name, // ✅ USAR ??
-    cantidad: 1,
-    // Campos opcionales con valores por defecto
-    imagen: 'default_product',
-    rating: 4.0,
-    reviews: 0,
-  );
-}
+
+
+  // DETECTAR SCROLL PARA CARGAR MÁS
+   void _onScroll(ScrollNotification scrollInfo) {
+    if (_isLoading || !_hasMore) return;
+    
+    if (scrollInfo.metrics.pixels >= scrollInfo.metrics.maxScrollExtent - 100) {
+      _loadMoreProducts(searchQuery: _currentSearchQuery);
+    }
+  }
+
+
+// //Future<List<Product>> _loadProductsFromOdoo() async {
+//   final tieneInternet = await ConnectivityService.hasInternet();
+  
+//   if (tieneInternet) {
+//     // ✅ CON INTERNET: Cargar de Odoo + actualizar caché
+//     return await _loadProductsFromOdooOnline();
+//   } else {
+//     // 🔴 SIN INTERNET: Usar caché local
+//     return await _loadProductsFromCache(); // 
+//   }
+// }
+
+// //Future<List<Product>> _loadProductsFromOdooOnline() async {
+//   try {
+//     print('🔵 Modo Online - Cargando productos de Odoo...');
+    
+//     final odooService = OdooServiceEnhanced(
+//       baseUrl: 'https://pointsalesqa.tailorw.net',
+//       dbName: 'pointsales_prodv18',
+//     );
+    
+//     bool isAuthenticated = await odooService.login('admin', 'admin');
+    
+//     if (isAuthenticated) {
+//       final productService = OdooProductService(odooService);
+//       final products = await productService.getProducts(limit: 50);
+      
+//       // ✅ GUARDAR EN CACHÉ
+//       await CacheService.saveProducts(products);
+      
+//       if (mounted) {
+//         setState(() {
+//           _allProducts = products;
+//           _filteredProducts = products;
+//         });
+//       }
+      
+//       print('✅ ${products.length} productos cargados desde Odoo y guardados en caché');
+      
+//       for (var product in products.take(3)) {
+//         print('   📦 ${product.name} - \$${product.listPrice}');
+//       }
+//       if (products.length > 3) {
+//         print('   ... y ${products.length - 3} más');
+//       }
+      
+//       return products; // ✅ YA ESTÁ BIEN ESTA LÍNEA
+//     } else {
+//       throw Exception('Error de autenticación con Odoo');
+//     }
+//   } catch (e) {
+//     print('❌ Error cargando productos de Odoo: $e');
+//     // Fallback: intentar cargar del caché
+//     return await _loadProductsFromCache(); // ✅ CORREGIDO
+//   }
+// }
+
+// Future<List<Product>> _loadProductsFromCache() async {
+//   print('🔴 [DEBUG] _loadProductsFromCache INICIADO');
+  
+//   try {
+//     print('${_getTimestamp()} 🔴 Modo Offline - Cargando productos del caché...');
+    
+//     final productosCache = await CacheService.getCachedProducts();
+    
+//     print('🔴 [DEBUG] Productos del caché: ${productosCache.length}');
+    
+//     if (productosCache.isNotEmpty && mounted) {
+//       print('🔴 [DEBUG] Intentando mostrar SnackBar para productos...');
+      
+//       ScaffoldMessenger.of(context).showSnackBar(
+//         SnackBar(
+//           content: Row(
+//             children: [
+//               Icon(Icons.wifi_off, size: 20, color: Colors.orange),
+//               SizedBox(width: 8),
+//               Expanded(
+//                 child: Text('📦 ${productosCache.length} productos cargados del caché'),
+//               ),
+//             ],
+//           ),
+//           duration: Duration(seconds: 4),
+//           backgroundColor: Colors.orange[800],
+//           behavior: SnackBarBehavior.floating,
+//         ),
+//       );
+      
+//       print('🔴 [DEBUG] SnackBar de productos mostrado');
+      
+//       setState(() {
+//         _allProducts = productosCache;
+//         _filteredProducts = productosCache;
+//       });
+      
+//       print('${_getTimestamp()} ✅ ${productosCache.length} productos cargados del caché');
+//       print('🔴 [DEBUG] _loadProductsFromCache FINALIZADO - ÉXITO'); // 
+      
+//       return productosCache;
+//     } else {
+//       print('🔴 [DEBUG] No hay productos en caché o widget no mounted');
+//       print('🔴 [DEBUG] _loadProductsFromCache FINALIZADO - VACÍO'); // 
+//       return [];
+//     }
+//   } catch (e) {
+//     print('❌ Error cargando productos del caché: $e');
+//     print('🔴 [DEBUG] _loadProductsFromCache FINALIZADO - ERROR'); // 
+//     return [];
+//   }
+// }
+
+
+String _getTimestamp() {
+  return '[${DateTime.now().hour}:${DateTime.now().minute}:${DateTime.now().second}]';
+} 
+  
+ ArticuloItem _productToArticuloItem(Product product) {
+    return ArticuloItem(
+      id: product.id,
+      nombre: product.name,
+      categoria: product.categoryName ?? 'Sin categoría',
+      subcategoria: product.typeDisplay,
+      precio: product.listPrice,
+      descripcion: product.description ?? product.name,
+      cantidad: 1,
+      imagen: 'default_product',
+    );
+  }
 
   // ✅ OBTENER CATEGORÍAS ÚNICAS DE PRODUCTOS ODDO
   List<String> get categorias {
@@ -128,66 +309,72 @@ ArticuloItem _productToArticuloItem(Product product) {
     return ['Todas las categorías', ...categoriasUnicas];
   }
 
-  List<ArticuloItem> get articulosFiltrados {
-    final articulos = _filteredProducts.map(_productToArticuloItem).toList();
+  // List<ArticuloItem> get articulosFiltrados {
+  //   final articulos = _filteredProducts.map(_productToArticuloItem).toList();
     
-    return articulos.where((articulo) {
-      // Filtro de búsqueda
-      final matchesSearch = _searchQuery.isEmpty ||
-          articulo.nombre.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-          articulo.descripcion.toLowerCase().contains(_searchQuery.toLowerCase());
+  //   return articulos.where((articulo) {
+  //     // Filtro de búsqueda
+  //     final matchesSearch = _searchQuery.isEmpty ||
+  //         articulo.nombre.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+  //         articulo.descripcion.toLowerCase().contains(_searchQuery.toLowerCase());
 
-      // Filtro de categoría
-      final matchesCategoria = _categoriaSeleccionada == 'Todas las categorías' || 
-          articulo.categoria == _categoriaSeleccionada;
+  //     // Filtro de categoría
+  //     final matchesCategoria = _categoriaSeleccionada == 'Todas las categorías' || 
+  //         articulo.categoria == _categoriaSeleccionada;
 
-      return matchesSearch && matchesCategoria;
-    }).toList();
+  //     return matchesSearch && matchesCategoria;
+  //   }).toList();
+  // }
+
+  // CONVERTIR PRODUCTOS A ARTÍCULOS
+  List<ArticuloItem> get articulosFiltrados {
+    return _allProducts.map(_productToArticuloItem).toList();
   }
 
-  List<ArticuloItem> get visibleArticulos {
-    return articulosFiltrados.take(_visibleItems).toList();
-  }
 
-  bool get canLoadMore => _visibleItems < articulosFiltrados.length;
+  // List<ArticuloItem> get visibleArticulos {
+  //   return articulosFiltrados.take(_visibleItems).toList();
+  // }
 
-  void _filtrarProductos(String query) {
-    setState(() {
-      if (query.isEmpty) {
-        _filteredProducts = _allProducts;
-      } else {
-        _filteredProducts = _allProducts.where((product) {
-          // ✅ BÚSQUEDA POR NOMBRE, DESCRIPCIÓN Y CÓDIGO
-          return product.name.toLowerCase().contains(query.toLowerCase()) ||
-                // (product.description?.toLowerCase().contains(query.toLowerCase()) ?? false) ||
-                 (product.defaultCode?.toLowerCase().contains(query.toLowerCase()) ?? false) ||
-                 (product.barcode?.toLowerCase().contains(query.toLowerCase()) ?? false);
-        }).toList();
-      }
-      _visibleItems = _itemsPerLoad; // Resetear paginación
-    });
-  }
+  //bool get canLoadMore => _visibleItems < articulosFiltrados.length;
 
-  Future<void> _loadMoreItems() async {
-    if (_isLoadingMore || !canLoadMore) return;
+  // void _filtrarProductos(String query) {
+  //   setState(() {
+  //     if (query.isEmpty) {
+  //       _filteredProducts = _allProducts;
+  //     } else {
+  //       _filteredProducts = _allProducts.where((product) {
+  //         // ✅ BÚSQUEDA POR NOMBRE, DESCRIPCIÓN Y CÓDIGO
+  //         return product.name.toLowerCase().contains(query.toLowerCase()) ||
+  //               // (product.description?.toLowerCase().contains(query.toLowerCase()) ?? false) ||
+  //                (product.defaultCode?.toLowerCase().contains(query.toLowerCase()) ?? false) ||
+  //                (product.barcode?.toLowerCase().contains(query.toLowerCase()) ?? false);
+  //       }).toList();
+  //     }
+  //     _visibleItems = _itemsPerLoad; // Resetear paginación
+  //   });
+  // }
 
-    setState(() {
-      _isLoadingMore = true;
-    });
+  // Future<void> _loadMoreItems() async {
+  //   if (_isLoadingMore || !canLoadMore) return;
 
-    await Future.delayed(const Duration(milliseconds: 500));
+  //   setState(() {
+  //     _isLoadingMore = true;
+  //   });
 
-    setState(() {
-      _visibleItems += _itemsPerLoad;
-      _isLoadingMore = false;
-    });
-  }
+  //   await Future.delayed(const Duration(milliseconds: 500));
 
-  void _resetPagination() {
-    setState(() {
-      _visibleItems = _itemsPerLoad;
-    });
-  }
+  //   setState(() {
+  //     _visibleItems += _itemsPerLoad;
+  //     _isLoadingMore = false;
+  //   });
+  // }
+
+  // void _resetPagination() {
+  //   setState(() {
+  //     _visibleItems = _itemsPerLoad;
+  //   });
+  // }
 
   void _agregarArticulo(ArticuloItem articulo, [int cantidad = 1]) {
     setState(() {
@@ -307,137 +494,110 @@ ArticuloItem _productToArticuloItem(Product product) {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("Seleccionar Productos"),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
+ @override
+Widget build(BuildContext context) {
+  return Scaffold(
+    appBar: AppBar(
+      title: const Text("Seleccionar Productos"),
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back),
+        onPressed: () => Navigator.pop(context),
+      ),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.search),
+          onPressed: () {
+            setState(() {
+              _mostrarBusqueda = !_mostrarBusqueda;
+            });
+          },
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: () {
-              setState(() {
-                _mostrarBusqueda = !_mostrarBusqueda;
-              });
-            },
-          ),
-        ],
-      ),
-      body: FutureBuilder<List<Product>>(
-        future: _futureProducts,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          
-          if (snapshot.hasError) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text('Error: ${snapshot.error}'),
-                  const SizedBox(height: 10),
-                  ElevatedButton(
-                    onPressed: () {
-                      setState(() {
-                        _futureProducts = _loadProductsFromOdoo();
-                      });
-                    },
-                    child: const Text('Reintentar'),
-                  ),
-                ],
-              ),
-            );
-          }
-          
-          if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Center(
-              child: Text('No hay productos disponibles'),
-            );
-          }
-          
-          return _buildContent();
-        },
-      ),
-    );
-  }
+      ],
+    ),
+    body: _buildContent(), // ✅ DIRECTAMENTE EL CONTENIDO, NO FUTUREBUILDER
+  );
+}
 
   Widget _buildContent() {
     return Column(
       children: [
-        // Barra de búsqueda (condicional)
+        // Barra de búsqueda 
         if (_mostrarBusqueda)
           Padding(
             padding: const EdgeInsets.all(16),
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
-                hintText: "Buscar productos...",
+                hintText: "Buscar por nombre, código o barras...",
                 prefixIcon: const Icon(Icons.search),
+                suffixIcon: _currentSearchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          _searchController.clear();
+                          _performSearch('');
+                        },
+                      )
+                    : null,
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 filled: true,
                 fillColor: Colors.grey[100],
               ),
-              onChanged: _filtrarProductos,
             ),
           ),
 
-        // Contador y filtros
-        Padding(
+
+                //  INDICADOR DE ESTADO
+
+          Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: SizedBox(
-            height: 32,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  "${articulosFiltrados.length} productos encontrados",
-                  style: const TextStyle(color: Colors.grey, fontSize: 12),
-                  overflow: TextOverflow.ellipsis,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                _currentSearchQuery.isEmpty
+                    ? "${_allProducts.length} productos${_hasMore ? '+' : ''}"
+                    : '"$_currentSearchQuery" - ${_allProducts.length} resultados${_hasMore ? '+' : ''}',
+                style: const TextStyle(color: Colors.grey, fontSize: 12),
+              ),
+              if (_isLoading)
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.filter_list, size: 20),
-                  onPressed: _mostrarDialogoFiltros,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  tooltip: 'Filtrar productos',
-                ),
-              ],
-            ),
+            ],
           ),
         ),
 
+
+
+
         // Lista de productos
-        Expanded(
+         Expanded(
           child: NotificationListener<ScrollNotification>(
-            onNotification: (scrollNotification) {
-              if (scrollNotification is ScrollEndNotification &&
-                  scrollNotification.metrics.pixels ==
-                      scrollNotification.metrics.maxScrollExtent &&
-                  canLoadMore) {
-                _loadMoreItems();
-              }
+            onNotification: (scrollInfo) {
+              _onScroll(scrollInfo);
               return false;
             },
-            child: ListView.separated(
-              itemCount: visibleArticulos.length + (canLoadMore ? 1 : 0),
-              separatorBuilder: (_, __) => const Divider(height: 1, indent: 16),
-              itemBuilder: (context, index) {
-                if (index == visibleArticulos.length) {
-                  return _buildLoadMoreButton();
-                }
-                
-                final articulo = visibleArticulos[index];
-                final cantidadAgregada = _cantidadesAgregadas[articulo.id] ?? 0;
-                final yaAgregado = cantidadAgregada > 0;
+            child: _allProducts.isEmpty && !_isLoading
+                ? _buildEmptyState()
+                : ListView.separated(
+                    itemCount: _allProducts.length + (_hasMore ? 1 : 0),
+                    separatorBuilder: (_, __) => const Divider(height: 1, indent: 16),
+                    itemBuilder: (context, index) {
+                      if (index == _allProducts.length) {
+                        return _buildLoadMoreLoader();
+                      }
+                      
+                      final product = _allProducts[index];
+                      final articulo = _productToArticuloItem(product);
+                      final cantidadAgregada = _cantidadesAgregadas[articulo.id] ?? 0;
+                      final yaAgregado = cantidadAgregada > 0;
 
-                return _buildArticuloItem(articulo, cantidadAgregada, yaAgregado);
-              },
-            ),
+                      return _buildArticuloItem(articulo, cantidadAgregada, yaAgregado, product);
+                    },
+                  ),
           ),
         ),
       ],
@@ -445,208 +605,243 @@ ArticuloItem _productToArticuloItem(Product product) {
   }
 
 
-Widget _buildArticuloItem(ArticuloItem articulo, int cantidad, bool yaAgregado) {
-  if (!_dismissibleKeys.containsKey(articulo.id)) {
-    _dismissibleKeys[articulo.id] = GlobalKey();
-  }
-  final product = _allProducts.firstWhere(
-    (p) => p.id == articulo.id, 
-    orElse: () => Product(
-      id: articulo.id,
-      name: articulo.nombre,
-      defaultCode: '',
-      listPrice: articulo.precio,
-      type: articulo.subcategoria == 'Servicio' ? 'service' : 'consu',
-      categoryName: articulo.categoria,
-    )
-  );
-  
-  // CALCULAR PRECIO CON IMPUESTO
-  final tieneImpuestos = product.taxesIds != null && product.taxesIds!.isNotEmpty;
-  final precioConImpuesto = tieneImpuestos ? 
-      product.listPrice * 1.18 : product.listPrice;
-
-  return Dismissible(
-    key: _dismissibleKeys[articulo.id]!,
-    direction: DismissDirection.startToEnd,
-    background: Container(
-      color: Colors.green,
-      alignment: Alignment.centerLeft,
-      padding: const EdgeInsets.only(left: 20),
-      child: const Row(
+  //  ESTADO VACÍO
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.add, color: Colors.white),
-          SizedBox(width: 8),
-          Text('Agregar', style: TextStyle(color: Colors.white)),
+          Icon(
+            _currentSearchQuery.isEmpty ? Icons.inventory_2 : Icons.search_off,
+            size: 64,
+            color: Colors.grey[400],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            _currentSearchQuery.isEmpty 
+                ? "No hay productos disponibles"
+                : 'No se encontraron resultados para "${_currentSearchQuery}"',
+            style: const TextStyle(fontSize: 16, color: Colors.grey),
+          ),
+          if (_currentSearchQuery.isNotEmpty)
+            TextButton(
+              onPressed: () {
+                _searchController.clear();
+                _performSearch('');
+              },
+              child: const Text('Limpiar búsqueda'),
+            ),
         ],
       ),
-    ),
-    onDismissed: (direction) {
-      _agregarArticulo(articulo);
-    },
-    child: Container(
-      constraints: const BoxConstraints(minHeight: 100),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        leading: Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            color: (product.typeColor).withOpacity(0.2),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Icon(
-            _getProductIcon(product.type),
-            color: product.typeColor,
-            size: 24,
-          ),
-        ),
-        title: Row(
-          children: [
-            Expanded(
-              child: Text(
-                product.name,
-                style: TextStyle(
-                  fontWeight: FontWeight.w500, 
-                  fontSize: 15,
-                  color: yaAgregado ? Colors.green[800] : Colors.black,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+    );
+  }
+
+  
+ //  LOADER PARA CARGAR MÁS
+  Widget _buildLoadMoreLoader() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Center(
+        child: _isLoading
+            ? const CircularProgressIndicator(strokeWidth: 2)
+            : OutlinedButton(
+                onPressed: () => _loadMoreProducts(searchQuery: _currentSearchQuery),
+                child: const Text("Cargar más productos"),
               ),
-            ),
+      ),
+    );
+  }
+
+
+
+//  ITEM DE PRODUCTO (adaptado para 4 parámetros)
+  Widget _buildArticuloItem(ArticuloItem articulo, int cantidad, bool yaAgregado, Product product) {
+  //  if (!_dismissibleKeys.containsKey(articulo.id)) {
+   //   _dismissibleKeys[articulo.id] = GlobalKey();
+   // }
+    
+    // CALCULAR PRECIO CON IMPUESTO
+    final tieneImpuestos = product.taxesIds != null && product.taxesIds!.isNotEmpty;
+    final precioConImpuesto = tieneImpuestos ? 
+        product.listPrice * 1.18 : product.listPrice;
+
+    return Dismissible(
+       key: Key('product_${articulo.id}_${product.hashCode}'), 
+      direction: DismissDirection.startToEnd,
+      background: Container(
+        color: Colors.green,
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.only(left: 20),
+        child: const Row(
+          children: [
+            Icon(Icons.add, color: Colors.white),
+            SizedBox(width: 8),
+            Text('Agregar', style: TextStyle(color: Colors.white)),
           ],
         ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Información básica
-            Row(
-              children: [
-                Icon(Icons.category, size: 12, color: Colors.grey),
-                SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    product.categoryName ?? 'Sin categoría',
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
-                    overflow: TextOverflow.ellipsis,
+      ),
+      onDismissed: (direction) {
+        _agregarArticulo(articulo);
+      },
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 100),
+        child: ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          leading: Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: (product.typeColor).withOpacity(0.2),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              _getProductIcon(product.type),
+              color: product.typeColor,
+              size: 24,
+            ),
+          ),
+          title: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  product.name,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w500, 
+                    fontSize: 15,
+                    color: yaAgregado ? Colors.green[800] : Colors.black,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-              ],
-            ),
-            SizedBox(height: 2),
-            
-            // Códigos y precios
-            Wrap(
-              spacing: 8,
-              runSpacing: 2,
+              ),
+            ],
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Información básica
+              Row(
+                children: [
+                  Icon(Icons.category, size: 12, color: Colors.grey),
+                  SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      product.categoryName ?? 'Sin categoría',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: 2),
+              
+              // Códigos
+              Wrap(
+                spacing: 8,
+                runSpacing: 2,
+                children: [
+                  if (product.defaultCode != null && product.defaultCode!.isNotEmpty)
+                    _buildInfoChip('Ref: ${product.defaultCode!}', Icons.code),
+                ],
+              ),
+              
+              // Información de disponibilidad e impuestos
+              SizedBox(height: 4),
+              Row(
+                children: [
+                  Icon(Icons.inventory, size: 12, color: Colors.blue),
+                  SizedBox(width: 4),
+                  Text(
+                    product.isSellable ? "Disponible" : "No vendible",
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: product.isSellable ? Colors.blue : Colors.grey,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  SizedBox(width: 8),
+                  if (tieneImpuestos)
+                    Container(
+                      padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        "+18% IVA",
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.orange,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+          trailing: SizedBox(
+            width: 90,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                if (product.defaultCode != null && product.defaultCode!.isNotEmpty)
-                  _buildInfoChip('Ref: ${product.defaultCode!}', Icons.code),
-              ],
-            ),
-            
-            // ✅ MODIFICADO: Información de precio e impuestos - QUITAMOS "Precio final"
-            SizedBox(height: 4),
-            Row(
-              children: [
-                // ✅ CAMBIADO: Texto "Disponible" en lugar del precio
-                Icon(Icons.inventory, size: 12, color: Colors.blue),
-                SizedBox(width: 4),
                 Text(
                   product.isSellable ? "Disponible" : "No vendible",
                   style: TextStyle(
-                    fontSize: 12,
-                    color: product.isSellable ? Colors.blue : Colors.grey,
+                    fontSize: 10,
+                    color: product.isSellable ? Colors.green[700] : Colors.grey,
                     fontWeight: FontWeight.w500,
                   ),
+                  textAlign: TextAlign.end,
                 ),
-                SizedBox(width: 8),
-                // ✅ MANTENEMOS: Indicador de impuestos
-                if (tieneImpuestos)
-                  Container(
-                    padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      "+18% IVA",
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Colors.orange,
-                        fontWeight: FontWeight.bold,
+                SizedBox(height: 4),
+                if (yaAgregado)
+                  _buildQuantitySelector(articulo, cantidad)
+                else
+                  Column(
+                    children: [
+                      Text(
+                        "\$${precioConImpuesto.toStringAsFixed(2)}",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: Colors.green,
+                        ),
                       ),
-                    ),
+                      if (tieneImpuestos)
+                        Text(
+                          "inc. impuesto",
+                          style: TextStyle(
+                            fontSize: 8,
+                            color: Colors.green[600],
+                          ),
+                        ),
+                    ],
                   ),
               ],
             ),
-            // ✅ QUITADO: La línea que mostraba "Precio final: \$..."
-          ],
-        ),
-        trailing: SizedBox(
-          width: 90,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              // ✅ CAMBIADO: Mostrar el estado de disponibilidad en lugar del precio
-              Text(
-                product.isSellable ? "Disponible" : "No vendible",
-                style: TextStyle(
-                  fontSize: 10,
-                  color: product.isSellable ? Colors.green[700] : Colors.grey,
-                  fontWeight: FontWeight.w500,
-                ),
-                textAlign: TextAlign.end,
-              ),
-              SizedBox(height: 4),
-              if (yaAgregado)
-                _buildQuantitySelector(articulo, cantidad)
-              else
-                // ✅ CAMBIADO: Mostrar el precio en lugar de "Disponible"
-                Column(
-                  children: [
-                    Text(
-                      "\$${precioConImpuesto.toStringAsFixed(2)}",
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                        color: Colors.green,
-                      ),
-                    ),
-                    if (tieneImpuestos)
-                      Text(
-                        "inc. impuesto",
-                        style: TextStyle(
-                          fontSize: 8,
-                          color: Colors.green[600],
-                        ),
-                      ),
-                  ],
-                ),
-            ],
           ),
-        ),
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => ProductDetailScreen(
-                articulo: articulo,
-                product: product,
-                cantidadInicial: cantidad,
-                onAgregarArticulo: (articulo, cantidad) {
-                  _agregarArticulo(articulo, cantidad);
-                },
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ProductDetailScreen(
+                  articulo: articulo,
+                  product: product,
+                  cantidadInicial: cantidad,
+                  onAgregarArticulo: (articulo, cantidad) {
+                    _agregarArticulo(articulo, cantidad);
+                  },
+                ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
+
 
 // ✅ Widget para chips de información
 Widget _buildInfoChip(String text, IconData icon) {
@@ -670,7 +865,7 @@ Widget _buildInfoChip(String text, IconData icon) {
   );
 }
 
-// ✅ Selector de cantidad mejorado
+// Selector de cantidad mejorado
 Widget _buildQuantitySelector(ArticuloItem articulo, int cantidad) {
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -709,7 +904,7 @@ Widget _buildQuantitySelector(ArticuloItem articulo, int cantidad) {
   );
 }
 
-// ✅ Iconos según tipo de producto
+//  Iconos según tipo de producto
 IconData _getProductIcon(String type) {
   switch (type) {
     case 'consu':
@@ -724,34 +919,27 @@ IconData _getProductIcon(String type) {
 }
 
 
-  Widget _buildLoadMoreButton() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      child: Center(
-        child: _isLoadingMore
-            ? const CircularProgressIndicator(strokeWidth: 2)
-            : OutlinedButton(
-                onPressed: _loadMoreItems,
-                style: OutlinedButton.styleFrom(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                ),
-                child: Text(
-                  "Cargar más (${articulosFiltrados.length - _visibleItems} restantes)",
-                  style: const TextStyle(fontSize: 12),
-                ),
-              ),
-      ),
-    );
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
+  // Widget _buildLoadMoreButton() {
+  //   return Padding(
+  //     padding: const EdgeInsets.symmetric(vertical: 16),
+  //     child: Center(
+  //       child: _isLoadingMore
+  //           ? const CircularProgressIndicator(strokeWidth: 2)
+  //           : OutlinedButton(
+  //               onPressed: _loadMoreItems,
+  //               style: OutlinedButton.styleFrom(
+  //                 shape: RoundedRectangleBorder(
+  //                   borderRadius: BorderRadius.circular(20),
+  //                 ),
+  //               ),
+  //               child: Text(
+  //                 "Cargar más (${articulosFiltrados.length - _visibleItems} restantes)",
+  //                 style: const TextStyle(fontSize: 12),
+  //               ),
+  //             ),
+  //     ),
+  //   );
+  // }
 }
 
 /// ✅ Pantalla de detalle de producto  
@@ -775,11 +963,15 @@ class ProductDetailScreen extends StatefulWidget {
 
 class _ProductDetailScreenState extends State<ProductDetailScreen> {
   int _cantidad = 1;
+  late ArticuloItem _currentArticulo;
+  late Product _currentProduct;
 
   @override
   void initState() {
     super.initState();
     _cantidad = widget.cantidadInicial > 0 ? widget.cantidadInicial : 1;
+
+    _actualizarProductoEnTiempoReal(); 
   }
  //  CALCULAR PRECIO CON IMPUESTO
   double get _precioConImpuesto {
@@ -793,7 +985,39 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     return widget.product.taxesIds != null && widget.product.taxesIds!.isNotEmpty;
   }
 
- 
+
+Future<void> _actualizarProductoEnTiempoReal() async {
+  try {
+    final odooService = OdooServiceEnhanced(
+      baseUrl: 'https://solutions.tailorw.net',
+      dbName: 'pointsales_prodv18',
+    );
+    
+    await odooService.login('admin', 'admin');
+    final productService = OdooProductService(odooService);
+    
+    final productoActualizado = await productService.getProductDetails(widget.product.id);
+    
+    if (productoActualizado != null && mounted) {
+      setState(() {
+        // ✅ USAR COPYWITH PARA CREAR NUEVAS INSTANCIAS ACTUALIZADAS
+        _currentArticulo = widget.articulo.copyWithProduct(productoActualizado);
+        _currentProduct = widget.product.copyWith(
+          name: productoActualizado.name,
+          listPrice: productoActualizado.listPrice,
+          categoryName: productoActualizado.categoryName,
+          description: productoActualizado.description,
+        );
+      });
+      
+      print('✅ Producto actualizado en detalle: ${productoActualizado.name} - \$${productoActualizado.listPrice}');
+    }
+  } catch (e) {
+    print('⚠️ No se pudo actualizar producto, usando datos cacheados: $e');
+  }
+}
+
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -808,6 +1032,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+             Text(
+            _currentArticulo.nombre, // ← USAR LA VERSIÓN ACTUALIZADA
+            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+          ),
             // ✅ Icono del producto
             Container(
               height: 200,
@@ -1240,32 +1468,33 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   // ✅ BOTÓN AGREGAR A ORDEN
   Widget _buildAddToOrderButton() {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton.icon(
-        onPressed: () {
-          widget.onAgregarArticulo(widget.articulo, _cantidad);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text("${_cantidad} ${widget.articulo.nombre} agregado(s) a la orden"),
-              duration: const Duration(seconds: 2),
-            ),
-          );
-          Navigator.pop(context);
-        },
-        icon: const Icon(Icons.shopping_bag),
-        label: Text(
-          widget.cantidadInicial > 0 ? "Actualizar en orden" : "Agregar artículo",
-          style: const TextStyle(fontSize: 16),
-        ),
-        style: ElevatedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          backgroundColor: Colors.blue,
-          foregroundColor: Colors.white,
-        ),
+  return SizedBox(
+    width: double.infinity,
+    child: ElevatedButton.icon(
+      onPressed: () {
+        // ✅ PASAR LA VERSIÓN ACTUALIZADA
+        widget.onAgregarArticulo(_currentArticulo, _cantidad);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("${_cantidad} ${_currentArticulo.nombre} agregado(s) a la orden"),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+        Navigator.pop(context);
+      },
+      icon: const Icon(Icons.shopping_bag),
+      label: Text(
+        widget.cantidadInicial > 0 ? "Actualizar en orden" : "Agregar artículo",
+        style: const TextStyle(fontSize: 16),
       ),
-    );
-  }
+      style: ElevatedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        backgroundColor: Colors.blue,
+        foregroundColor: Colors.white,
+      ),
+    ),
+  );
+}
 
   // ✅ ICONO SEGÚN TIPO DE PRODUCTO
   IconData _getProductIcon(String type) {

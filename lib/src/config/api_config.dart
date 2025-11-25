@@ -1,7 +1,7 @@
 // lib/src/config/api_config.dart
 class ApiConfig {
   // ✅ URL CORRECTA PARA ODDO
-  static const String baseUrl = 'https://pointsalesqa.tailorw.net';
+  static const String baseUrl = 'https://solutions.tailorw.net';
   static const String dbName = 'pointsales_prodv18'; // Base de datos
   static const String defaultUsername = 'admin';
   static const String defaultPassword = 'admin';

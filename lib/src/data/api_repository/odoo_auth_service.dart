@@ -9,7 +9,7 @@ class OdooAuthService {
     required String password,
   }) async {
     try {
-      print('🔐 Autenticando con Odoo JSON-RPC...');
+      print('🔐 Autenticando con JSON-RPC...');
       print('🌐 URL: ${ApiConfig.baseUrl}${ApiConfig.commonEndpoint}');
       print('💾 Base de datos: ${ApiConfig.dbName}');
       print('👤 Usuario: $username');

@@ -9,7 +9,7 @@ class OdooCustomerService {
 
   Future<List<Customer>> getCustomers({int limit = 20}) async {
     try {
-      print('🔄 Obteniendo clientes desde Odoo...');
+      print('🔄 Obteniendo clientes ...');
       
       final result = await odooService.callKw({
         'service': 'object',

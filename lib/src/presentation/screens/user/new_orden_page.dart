@@ -23,6 +23,11 @@ import 'package:ecomerce_app/src/data/api_repository/odoo_service_enhanced.dart'
 import 'dart:math';
 
 //import 'package:ecomerce_app/src/domain/models/articulo.dart'; 
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:ecomerce_app/src/services/connectivity_service.dart';
+import 'package:ecomerce_app/src/services/cache_service.dart';
+
+import 'package:ecomerce_app/src/services/offline_order_service.dart';
 
 class NuevaOrdenPage extends StatefulWidget {
   final Customer customer; 
@@ -145,87 +150,99 @@ class _NuevaOrdenPageState extends State<NuevaOrdenPage>   with SingleTickerProv
 
 // ✅ Método mejorado para manejar el escaneo
 void _handleScan(BarcodeCapture capture) async {
-  if (_isProcessingScan || capture.barcodes.isEmpty) {
-    print('⚠️ No se detectaron códigos en el escaneo');
-    return;
-  }
+  if (_isProcessingScan || capture.barcodes.isEmpty) return;
   
   final code = capture.barcodes.first.rawValue;
-  if (code == null || code.isEmpty) {
-    print('⚠️ Código QR vacío o sin datos');
-    
-    // Opcional: Mostrar feedback al usuario
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("Código QR vacío - intente con otro código"),
-        duration: Duration(seconds: 2),
-      ),
-    );
-    return;
-  }
+  if (code == null || code.isEmpty) return;
 
   _isProcessingScan = true;
   
-  print('📱 Código escaneado: $code');
-  
-  // ✅ Buscar el producto por código QR en productos de Odoo
-  ArticuloItem? productoEscaneado = _buscarProductoPorCodigoQR(code);
-  
-  if (productoEscaneado != null) {
-    // ✅ Producto encontrado - abrir pantalla de detalle
-    print('🎯 Abriendo detalle del producto: ${productoEscaneado.nombre}');
-    _mostrarDetalleProductoEscaneado(productoEscaneado);
-  } else {
-    // ✅ Producto no encontrado - mostrar error y opción para agregar genérico
-    print('⚠️ Producto no encontrado, mostrando diálogo de opciones');
-    
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Producto no encontrado"),
-        content: Text("No se encontró un producto con el código: $code"),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text("Cancelar"),
-          ),
-
-
-        ],
-      ),
+  try {
+    // ✅ PRIMERO BUSCAR EN TIEMPO REAL EN ODDO
+    final odooService = OdooServiceEnhanced(
+      baseUrl: 'https://solutions.tailorw.net',
+      dbName: 'pointsales_prodv18',
     );
-
-    if (result == true) {
-      // Agregar producto genérico
-      final nuevo = ArticuloItem(
-        id: DateTime.now().millisecondsSinceEpoch,
-        nombre: "Producto Escaneado",
-        categoria: "Genérico",
-        cantidad: 1,
-        precio: 0.0, // Precio 0 para que el usuario lo ajuste después
-        descripcion: "Código: $code",
-      );
-
-      setState(() {
-        _articulos.add(nuevo);
-        _actualizarTotal();
-        _guardarDraft();
-      });
+    
+    await odooService.login('admin', 'admin');
+    final productService = OdooProductService(odooService);
+    
+    final Product? productRealTime = await productService.getProductByBarcode(code);
+    
+    if (productRealTime != null) {
+      print('✅ Producto actualizado desde Odoo: ${productRealTime.name} - \$${productRealTime.listPrice}');
       
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Producto genérico agregado - ajuste el precio"),
-          duration: Duration(seconds: 3),
+      final articuloActualizado = ArticuloItem(
+        id: productRealTime.id,
+        nombre: productRealTime.name,
+        categoria: productRealTime.categoryName ?? 'Sin categoría',
+        subcategoria: productRealTime.typeDisplay,
+        precio: productRealTime.listPrice,
+        descripcion: productRealTime.description ?? productRealTime.name,
+        cantidad: 1,
+      );
+      
+      _mostrarDetalleProductoEscaneado(articuloActualizado);
+    } else {
+      // ✅ Fallback a búsqueda local
+      final productoCached = _productosDisponibles.firstWhere(
+        (p) => p.barcode == code || p.defaultCode == code,
+        orElse: () => Product(
+          id: -1,
+          name: '',
+          listPrice: 0.0,
+          type: 'consu',
         ),
       );
+      
+      if (productoCached.id != -1) {
+        final articulo = ArticuloItem(
+          id: productoCached.id,
+          nombre: productoCached.name,
+          categoria: productoCached.categoryName ?? 'Sin categoría',
+          subcategoria: productoCached.typeDisplay,
+          precio: productoCached.listPrice,
+          descripcion: productoCached.description ?? productoCached.name,
+          cantidad: 1,
+        );
+        _mostrarDetalleProductoEscaneado(articulo);
+      } else {
+        _mostrarMensajeError('Producto no encontrado con código: $code');
+      }
     }
+  } catch (e) {
+    print('❌ Error en escaneo: $e');
+    // Fallback a búsqueda local
+    final productoCached = _productosDisponibles.firstWhere(
+      (p) => p.barcode == code || p.defaultCode == code,
+      orElse: () => Product(
+        id: -1,
+        name: '',
+        listPrice: 0.0,
+        type: 'consu',
+      ),
+    );
+    
+    if (productoCached.id != -1) {
+      final articulo = ArticuloItem(
+        id: productoCached.id,
+        nombre: productoCached.name,
+        categoria: productoCached.categoryName ?? 'Sin categoría',
+        subcategoria: productoCached.typeDisplay,
+        precio: productoCached.listPrice,
+        descripcion: productoCached.description ?? productoCached.name,
+        cantidad: 1,
+      );
+      _mostrarDetalleProductoEscaneado(articulo);
+    } else {
+      _mostrarMensajeError('Producto no encontrado');
+    }
+  } finally {
+    _isProcessingScan = false;
+    setState(() => _mostrarScanner = false);
   }
-
-  setState(() {
-    _mostrarScanner = false;
-  });
-  _isProcessingScan = false;
 }
+
 // ✅ Método auxiliar para mostrar mensajes de error
 void _mostrarMensajeError(String mensaje) {
   ScaffoldMessenger.of(context).showSnackBar(
@@ -282,21 +299,37 @@ Future<void> _cargarProductos() async {
     
     if (isAuthenticated) {
       final productService = OdooProductService(odooService);
-      final products = await productService.getProducts(limit: 200); // Aumenta el límite
+      
+      // ✅ VERIFICAR SI DEBE ACTUALIZARSE
+      final shouldRefresh = await CacheService.shouldRefreshProducts();
+      List<Product> products;
+      
+      if (shouldRefresh) {
+        print('🔄 Actualizando productos (cache expirado)...');
+        products = await productService.getProducts(limit: 200);
+      } else {
+        print('📦 Usando productos en caché...');
+        products = await CacheService.getCachedProducts();
+        
+        // ✅ SI CACHÉ ESTÁ VACÍO, CARGAR DE TODOS MODOS
+        if (products.isEmpty) {
+          products = await productService.getProducts(limit: 200);
+        }
+      }
       
       setState(() {
         _productosDisponibles = products;
       });
       
-      print('✅ Productos cargados en NuevaOrdenPage: ${products.length}');
-      
-      // Debug: mostrar algunos productos para verificar
-      for (var i = 0; i < min(5, products.length); i++) {
-        print('   📦 ${products[i].name} - Código: ${products[i].defaultCode}');
-      }
+      print('✅ Productos cargados: ${products.length}');
     }
   } catch (e) {
     print('❌ Error cargando productos: $e');
+    // Fallback a caché
+    final cachedProducts = await CacheService.getCachedProducts();
+    setState(() {
+      _productosDisponibles = cachedProducts;
+    });
   }
 }
 
@@ -671,79 +704,44 @@ Future<bool> _mostrarConfirmacionEliminar(BuildContext context) async {
   ) ?? false;
 }
 
-
-  Widget _buildBottomStaticSection() {
-    int totalArticulos = _articulos.fold(0, (sum, articulo) => sum + articulo.cantidad);
-    double totalPagar = _articulos.fold(0, (sum, articulo) => sum + (articulo.precio * articulo.cantidad));
-    
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Colors.grey.shade300, width: 1)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 4,
-            offset: const Offset(0, -2),
-          ),
+// 🔴 MÉTODO PARA MOSTRAR DIÁLOGO SIN CONEXIÓN 
+void _mostrarDialogoSinConexion() {
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Row(
+        children: [
+          Icon(Icons.wifi_off, color: Colors.orange),
+          SizedBox(width: 10),
+          Text("Sin Conexión"),
         ],
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // ✅ Fila compacta de totales
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              // Total de artículos
-              Row(
-                children: [
-                  const Icon(Icons.shopping_basket, size: 16, color: Colors.grey),
-                  const SizedBox(width: 6),
-                  Text(
-                    '$totalArticulos artículos',
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                ],
-              ),
-              
-              // Total a pagar
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  const Text(
-                    'Total a pagar:',
-                    style: TextStyle(fontSize: 11, color: Colors.grey),
-                  ),
-                  Text(
-                    '\$${totalPagar.toStringAsFixed(2)}',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.green,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          
-          const SizedBox(height: 12),
-          
-          
-           SizedBox(
-            width: double.infinity,
-            height: 45,
-            child: ElevatedButton(
-              onPressed: () async {
+      content: const Text(
+        "No hay conexión a internet disponible. "
+        "Conectate a WiFi o activa tus datos móviles para crear órdenes.",
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text("Entendido"),
+        ),
+      ],
+    ),
+  );
+}
+
+//  MÉTODO PARA GUARDAR ONLINE (CORREGIDO)
+Future<void> _guardarOrdenOnline() async {
   if (_articulos.isEmpty) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text("Agregue al menos un artículo")));
     return;
   }
   
-  // ✅ MOSTRAR LOADING
+  // CALCULAR TOTAL - Esto faltaba
+  double totalPagar = _articulos.fold(0, (sum, articulo) => sum + (articulo.precio * articulo.cantidad));
+  
+  // MOSTRAR LOADING
   showDialog(
     context: context,
     barrierDismissible: false,
@@ -753,7 +751,7 @@ Future<bool> _mostrarConfirmacionEliminar(BuildContext context) async {
   );
 
   try {
-    // ✅ 1. PREPARAR DATOS PARA ODDO
+    // 1. PREPARAR DATOS PARA ODDO
     final orderLines = _articulos.map((articulo) {
       return {
         'product_id': articulo.id,
@@ -762,7 +760,7 @@ Future<bool> _mostrarConfirmacionEliminar(BuildContext context) async {
       };
     }).toList();
 
-    // ✅ 2. CREAR ORDEN EN ODDO CON FLUJO AUTOMÁTICO
+    // 2. CREAR ORDEN EN ODDO CON FLUJO AUTOMÁTICO
     final odooService = OdooServiceEnhanced(
       baseUrl: 'https://pointsalesqa.tailorw.net',
       dbName: 'pointsales_prodv18',
@@ -776,21 +774,21 @@ Future<bool> _mostrarConfirmacionEliminar(BuildContext context) async {
       orderLines: orderLines,
     );
 
-    // ✅ 3. CERRAR LOADING
+    // 3. CERRAR LOADING
     Navigator.pop(context);
 
     if (result['success'] == true) {
       print('🎉 Orden creada exitosamente en Odoo - ID: ${result['order_id']}');
       
-      // ✅ 4. CREAR ORDEN LOCAL PARA LA APP
+      // 4. CREAR ORDEN LOCAL PARA LA APP
       final nuevaOrden = Order(
         id: result['order_id'].toString(),
         date: DateTime.now(),
-        total: totalPagar,
-        status: 'draft', // Estado inicial de Odoo
+        total: totalPagar, // ✅ AHORA totalPagar ESTÁ DEFINIDO
+        status: 'draft',
       );
 
-      // ✅ 5. NOTIFICAR Y CERRAR
+      // 5. NOTIFICAR Y CERRAR
       widget.onOrdenCreada(nuevaOrden, _selectedCustomer!, _articulos);
       _limpiarDraft();
       
@@ -821,33 +819,163 @@ Future<bool> _mostrarConfirmacionEliminar(BuildContext context) async {
       ),
     );
   }
-},
+}
 
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                elevation: 2,
-              ),
-              child: const Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.check_circle, size: 18),
-                  SizedBox(width: 6),
-                  Text(
-                    'Guardar Orden',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
+
+// 🔴 MÉTODO PARA GUARDAR OFFLINE
+Future<void> _guardarOrdenOffline() async {
+  if (_articulos.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Agregue al menos un artículo")));
+    return;
+  }
+
+  try {
+    // CALCULAR TOTAL
+    double totalPagar = _articulos.fold(0, (sum, articulo) => sum + (articulo.precio * articulo.cantidad));
+    
+    // Preparar datos para guardar offline
+    final orderLines = _articulos.map((articulo) {
+      return {
+        'product_id': articulo.id,
+        'product_name': articulo.nombre,
+        'quantity': articulo.cantidad,
+        'price_unit': articulo.precio,
+      };
+    }).toList();
+
+    // Guardar en almacenamiento offline
+    await OfflineOrderService.saveOrderOffline(
+      partnerId: _selectedCustomer!.id!,
+      partnerName: _selectedCustomer!.name,
+      orderLines: orderLines,
+      total: totalPagar,
+    );
+
+    // Mostrar mensaje de éxito
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("✅ Orden guardada offline - Se sincronizará automáticamente cuando haya conexión"),
+        duration: Duration(seconds: 4),
+      ),
+    );
+    
+    // Limpiar y cerrar
+    _limpiarDraft();
+    Navigator.pop(context);
+    
+  } catch (e) {
+    print('❌ Error guardando orden offline: $e');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("❌ Error guardando orden offline: $e"),
+        backgroundColor: Colors.red,
       ),
     );
   }
+}
+
+Widget _buildBottomStaticSection() {
+  int totalArticulos = _articulos.fold(0, (sum, articulo) => sum + articulo.cantidad);
+  double totalPagar = _articulos.fold(0, (sum, articulo) => sum + (articulo.precio * articulo.cantidad));
+  
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      border: Border(top: BorderSide(color: Colors.grey.shade300, width: 1)),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withOpacity(0.1),
+          blurRadius: 4,
+          offset: const Offset(0, -2),
+        ),
+      ],
+    ),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // ✅ Fila compacta de totales
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            // Total de artículos
+            Row(
+              children: [
+                const Icon(Icons.shopping_basket, size: 16, color: Colors.grey),
+                const SizedBox(width: 6),
+                Text(
+                  '$totalArticulos artículos',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
+            
+            // Total a pagar
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                const Text(
+                  'Total a pagar:',
+                  style: TextStyle(fontSize: 11, color: Colors.grey),
+                ),
+                Text(
+                  '\$${totalPagar.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.green,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        
+        const SizedBox(height: 12),
+        
+        SizedBox(
+          width: double.infinity,
+          height: 45,
+          child: ElevatedButton(
+          onPressed: () async {
+           //  VERIFICAR CONEXIÓN ANTES DE GUARDAR
+          final tieneInternet = await ConnectivityService.hasInternet();
+  
+          if (!tieneInternet) {
+           // 🔴 MODO SIN CONEXIÓN - Guardar offline
+          await _guardarOrdenOffline();
+         return;
+      }
+  
+  // ✅ MODO CON CONEXIÓN - Guardar online
+  await _guardarOrdenOnline();
+},
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              elevation: 2,
+            ),
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.check_circle, size: 18),
+                SizedBox(width: 6),
+                Text(
+                  'Guardar Orden',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
 
   @override
   Widget build(BuildContext context) {

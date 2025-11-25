@@ -7,7 +7,7 @@ import 'package:ecomerce_app/src/presentation/screens/botton_navigation_bar_scre
 import 'package:ecomerce_app/src/presentation/screens/botton_navigation_bar_screen/05-profile_screen.dart';
 import 'package:ecomerce_app/src/presentation/screens/product/product_list.dart';
 import 'package:ecomerce_app/src/presentation/screens/user/orden_de_page.dart';
-import 'package:ecomerce_app/src/domain/models/customer_model.dart';
+//import 'package:ecomerce_app/src/domain/models/customer_model.dart';
 import 'package:ecomerce_app/src/presentation/screens/botton_navigation_bar_screen/06-maps.dart';
   //import 'package:ecomerce_app/src/presentation/screens/user/new_orden_page.dart'; // importa el estado global
   //import 'package:badges/badges.dart' as badges;
@@ -15,8 +15,13 @@ import 'package:ecomerce_app/src/presentation/screens/botton_navigation_bar_scre
 import 'package:ecomerce_app/src/presentation/components/custon_appbar/appDrawer.dart';
 import 'package:ecomerce_app/src/presentation/components/custon_appbar/custon_appbar.dart';
 //import 'package:ecomerce_app/src/presentation/screens/user/home_screen.dart'; // importa el estado global
-import 'package:ecomerce_app/src/providers/helper/usuario_providers.dart'; // ✅ IMPORT CORRECTO
+import 'package:ecomerce_app/src/providers/helper/usuario_providers.dart'; 
+//import 'package:ecomerce_app/src/data/api_repository/odoo_product_service.dart';
 
+//import 'package:ecomerce_app/src/domain/models/articulo.dart'; 
+//import 'package:ecomerce_app/src/services/connectivity_service.dart';
+//import 'package:ecomerce_app/src/data/api_repository/inventario/inventory_service_odoo.dart';
+import 'package:ecomerce_app/src/data/api_repository/inventario/inventory_sync_manager.dart';
 import 'package:provider/provider.dart'; 
 
 class HomeScreen extends StatefulWidget {
@@ -66,7 +71,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // ✅ ENVOLVER CON CONSUMER PARA OBTENER DATOS DEL PROVIDER
+
     return Consumer<UsuarioProvider>(
       builder: (context, usuarioProvider, child) {
         return Scaffold(
@@ -77,8 +82,8 @@ class _HomeScreenState extends State<HomeScreen> {
             },
             showTitle: false,
             // ✅ PASAR LOS DATOS DEL PROVIDER AL CUSTOM APP BAR
-            companyName: usuarioProvider.companyName,
-            userName: usuarioProvider.userName,
+            //companyName: usuarioProvider.companyName,
+            //userName: usuarioProvider.userName,
           ),
           drawer: AppDrawer(
             onItemTapped: (index) {
@@ -195,4 +200,27 @@ class _HomeScreenState extends State<HomeScreen> {
         return "App Movistar";
     }
   }
+
+
+//botón de Sincronización Manual
+//   Widget _buildBotonSincronizacionInventario() {
+//   return Consumer<InventorySyncManager>(
+//     builder: (context, syncManager, child) {
+//       return FloatingActionButton.extended(
+//         onPressed: () async {
+//           final result = await syncManager.performQuickSync();
+//           ScaffoldMessenger.of(context).showSnackBar(
+//             SnackBar(
+//               content: Text(result ? '✅ Inventario sincronizado' : '❌ Error sincronizando'),
+//               backgroundColor: result ? Colors.green : Colors.red,
+//             ),
+//           );
+//         },
+//         icon: const Icon(Icons.sync),
+//         label: const Text('Sincronizar Inventario'),
+//         backgroundColor: Colors.deepPurple,
+//       );
+//     },
+//   );
+// }
 }

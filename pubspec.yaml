@@ -41,7 +41,6 @@ dependencies:
   provider: ^6.1.5
   shared_preferences: ^2.5.3
   path_provider: ^2.1.5
-  mssql_connection: ^2.0.2
   local_auth: ^2.3.0
   google_fonts: ^6.2.1
   pdf: ^3.11.3
@@ -51,6 +50,10 @@ dependencies:
   flutter_slidable: ^4.0.1
   json_annotation: ^4.9.0
   xml: ^6.6.1
+  connectivity_plus: ^7.0.0
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+
 
 
 dev_dependencies:

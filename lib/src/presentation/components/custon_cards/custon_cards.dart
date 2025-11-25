@@ -4,11 +4,14 @@ import 'package:ecomerce_app/src/domain/models/articulo.dart';
 import 'package:ecomerce_app/src/domain/models/customer_model.dart';
 import 'package:ecomerce_app/src/presentation/screens/user/orden_de_page.dart';
 import 'package:ecomerce_app/src/presentation/screens/product/product_list.dart';
-
+import 'package:ecomerce_app/src/presentation/screens/user/orden.dart';
 import 'package:ecomerce_app/src/presentation/screens/user/articuloSelectorCompleto.dart';
 import 'package:ecomerce_app/src/presentation/screens/botton_navigation_bar_screen/02-client_screen.dart';
 import 'package:ecomerce_app/src/presentation/screens/botton_navigation_bar_screen/07-proveedores.dart';
 import 'package:ecomerce_app/src/presentation/screens/botton_navigation_bar_screen/08-toma_de_inventario.dart';
+import 'package:ecomerce_app/src/services/service_company.dart';
+import 'package:ecomerce_app/src/presentation/screens/user/orden_de_compra.dart';
+
 
 class Custon_Cards extends StatefulWidget {
   final Customer customer; 
@@ -23,8 +26,23 @@ class Custon_Cards extends StatefulWidget {
 }
 
 class _Custon_CardsState extends State<Custon_Cards> {
+
   List<Map<String, dynamic>> recentOrders = [];
-   List<ArticuloItem> _articulosSeleccionados = [];
+  List<ArticuloItem> _articulosSeleccionados = [];
+
+     @override
+  void initState() {
+    super.initState();
+    // ✅ VERIFICAR QUE EL SERVICIO ESTÉ INICIALIZADO
+    _ensureCompanyServiceInitialized();
+  }
+    Future<void> _ensureCompanyServiceInitialized() async {
+    final companyService = CompanyService();
+    if (companyService.odooService == null) {
+      await companyService.initialize();
+    }
+  }
+
 
   void addRecentOrder(String cliente, String ordenId) {
     recentOrders.insert(0, {
@@ -147,6 +165,9 @@ class _Custon_CardsState extends State<Custon_Cards> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        _buildCompanyHeader(),
+        
+        const SizedBox(height: 10),
         // SECCIÓN VENTAS
         const Text(
           'Ventas',
@@ -291,22 +312,22 @@ class _Custon_CardsState extends State<Custon_Cards> {
         Row(
           children: [
             buildCard(
-              const Color.fromARGB(255, 88, 63, 128),
-              Icons.shopping_cart_checkout,
-              'Órdenes de compra',
-              onTap: () async {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => RecentOrdersScreen(
-                      recentOrders: recentOrders,
-                      customer: widget.customer,
-                    ),
-                  ),
-                );
-                setState(() {});
-              },
-            ),
+  const Color.fromARGB(255, 88, 63, 128),
+  Icons.shopping_cart_checkout,
+  'Órdenes de compra',
+  onTap: () async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PurchaseOrdersScreen(
+          purchaseOrders: [], 
+          selectedSupplier: null,
+        ),
+      ),
+    );
+    setState(() {});
+  },
+),
             const SizedBox(width: 10),
             buildCard(
               const Color.fromARGB(255, 88, 63, 128),
@@ -349,21 +370,22 @@ class _Custon_CardsState extends State<Custon_Cards> {
       MaterialPageRoute(
         builder: (context) => ProveedoresScreen(
           onSupplierPageNavigate: (supplier) {
-            // Manejar la navegación para proveedores (empresas)
+            // ✅ CORREGIDO: Navegar directamente a crear orden de compra
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => OrdenPago(
-                  customer: supplier,
-                  onProductListNavigate: (selectedSupplier) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => ProductList(
-                          selectedCustomer: selectedSupplier,
-                        ),
+                builder: (context) => CrearOrdenCompraScreen(
+                  proveedor: supplier,
+                  onOrdenCreada: (orden, proveedor, articulos) {
+                    // Manejar la orden creada exitosamente
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('✅ Orden de compra creada para ${proveedor.name}'),
+                        backgroundColor: Colors.green,
                       ),
                     );
+                    // Opcional: Navegar de vuelta
+                    Navigator.pop(context);
                   },
                 ),
               ),
@@ -416,6 +438,23 @@ class _Custon_CardsState extends State<Custon_Cards> {
       ],
     );
   }
+  
+
+
+    // ✅ HEADER CON INFORMACIÓN DE EMPRESA
+  Widget _buildCompanyHeader() {
+      final companyService = CompanyService();
+
+
+     return Card(
+    elevation: 2,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(12),
+    ),
+
+  );
+}
+
    //Widget para mostrar información del cliente
   Widget _buildCustomerInfo() {
     return Card(

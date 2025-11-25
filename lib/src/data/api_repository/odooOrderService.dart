@@ -1,8 +1,3 @@
-// odoo_order_service.dart;
-//import 'package:ecomerce_app/src/domain/models/model_orden.dart';
-//import 'package:ecomerce_app/src/domain/models/articulo.dart';
-//import 'package:ecomerce_app/src/domain/models/users_model.dart';
-// odoo_order_service.dart - AGREGA ESTA CLASE
 import 'package:ecomerce_app/src/data/api_repository/odoo_service_enhanced.dart';
 
 // odoo_order_service.dart

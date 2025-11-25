@@ -1,216 +1,208 @@
+// inventory_dashboard_screen.dart
 import 'package:flutter/material.dart';
 import 'package:ecomerce_app/src/domain/models/inventario_models.dart';
-//import 'package:ecomerce_app/src/presentation/screens/botton_navigation_bar_screen/08-toma_de_inventario.dart';
-import 'package:intl/intl.dart'; 
+import 'package:ecomerce_app/src/presentation/screens/inventario/nuevaTomaInventario.dart';
+import 'package:ecomerce_app/src/presentation/screens/inventario/actualizar_inventario_screen.dart';
 
-class ActualizarInventarioScreen extends StatefulWidget {
-  final List<InventoryItem> currentInventory;
-  final String customerName;
-  final String updatedBy;
 
-  const ActualizarInventarioScreen({
-    super.key,
-    required this.currentInventory,
-    required this.customerName,
-    required this.updatedBy,
-  });
+import 'package:intl/intl.dart';
+
+class InventoryDashboardScreen extends StatefulWidget {
+  final String usuarioActual;
+
+  const InventoryDashboardScreen({super.key, required this.usuarioActual});
 
   @override
-  State<ActualizarInventarioScreen> createState() => _ActualizarInventarioScreenState();
+  State<InventoryDashboardScreen> createState() => _InventoryDashboardScreenState();
 }
 
-class _ActualizarInventarioScreenState extends State<ActualizarInventarioScreen> {
-  final List<InventoryUpdateItem> _updateItems = [];
-  final TextEditingController _searchController = TextEditingController();
-  final TextEditingController _notesController = TextEditingController();
-  String _searchQuery = '';
+class _InventoryDashboardScreenState extends State<InventoryDashboardScreen> {
+  final List<InventoryUpdate> _updateHistory = [];
+  InventoryBalance? _currentBalance;
 
   @override
   void initState() {
     super.initState();
-    _initializeUpdateItems();
+    _loadInventoryData();
   }
 
-  void _initializeUpdateItems() {
-    setState(() {
-      _updateItems.addAll(widget.currentInventory.map((item) {
-        return InventoryUpdateItem(
-          productId: item.id,
-          productName: item.name,
-          sku: item.sku,
-          previousStock: item.currentStock,
-          newStock: item.currentStock, // Inicialmente igual
-          difference: 0,
-          action: 'updated',
-        );
-      }).toList());
-    });
+  void _loadInventoryData() {
+    // Cargar datos iniciales del inventario
   }
 
-  List<InventoryUpdateItem> get _filteredItems {
-    if (_searchQuery.isEmpty) return _updateItems;
-    return _updateItems.where((item) {
-      return item.productName.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-             item.sku.toLowerCase().contains(_searchQuery.toLowerCase());
-    }).toList();
-  }
-
-  void _updateStock(int productId, int newStock) {
-    setState(() {
-      final item = _updateItems.firstWhere((element) => element.productId == productId);
-      final index = _updateItems.indexOf(item);
-      
-      _updateItems[index] = InventoryUpdateItem(
-        productId: item.productId,
-        productName: item.productName,
-        sku: item.sku,
-        previousStock: item.previousStock,
-        newStock: newStock,
-        difference: newStock - item.previousStock,
-        action: newStock == 0 ? 'removed' : 
-                newStock > item.previousStock ? 'added' : 'updated',
-      );
-    });
-  }
-
-  void _addNewProduct() {
-    showDialog(
-      context: context,
-      builder: (context) => AddProductDialog(
-        onProductAdded: (productName, sku, stock) {
-          // Aquí integrarías con tu servicio de productos
-          _addNewProductItem(productName, sku, stock);
-        },
+  void _navigateToUpdateInventory() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ActualizarInventarioScreen(
+          currentInventory: [], // Pasar inventario actual
+          customerName: 'Cliente Principal', // Pasar nombre del cliente
+          updatedBy: widget.usuarioActual,
+        ),
       ),
     );
-  }
 
-  void _addNewProductItem(String productName, String sku, int stock) {
-    setState(() {
-      final newId = _updateItems.isNotEmpty ? 
-          _updateItems.map((e) => e.productId).reduce((a, b) => a > b ? a : b) + 1 : 1;
-      
-      _updateItems.add(InventoryUpdateItem(
-        productId: newId,
-        productName: productName,
-        sku: sku,
-        previousStock: 0,
-        newStock: stock,
-        difference: stock,
-        action: 'added',
-      ));
-    });
-  }
-
-  void _confirmUpdate() {
-    final changes = _updateItems.where((item) => item.previousStock != item.newStock).toList();
-    
-    if (changes.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No hay cambios para guardar')),
-      );
-      return;
+    if (result != null && result is InventoryUpdate) {
+      setState(() {
+        _updateHistory.insert(0, result);
+        _currentBalance = result.balance;
+      });
     }
-
-    showDialog(
-      context: context,
-      builder: (context) => UpdateConfirmationDialog(
-        updateItems: changes,
-        customerName: widget.customerName,
-        updatedBy: widget.updatedBy,
-        notes: _notesController.text,
-        onConfirm: _saveInventoryUpdate,
-      ),
-    );
   }
 
-  void _saveInventoryUpdate() {
-    // Aquí guardarías en tu base de datos
-    final update = InventoryUpdate(
-      id: DateTime.now().millisecondsSinceEpoch,
-      timestamp: DateTime.now(),
-      updatedBy: widget.updatedBy,
-      customerName: widget.customerName,
-      items: _updateItems.where((item) => item.previousStock != item.newStock).toList(),
-      notes: _notesController.text,
+  void _navigateToNewInventory() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => NuevaTomaInventarioScreen(
+          usuarioActual: widget.usuarioActual,
+        ),
+      ),
     );
 
-    // Navegar de vuelta con el resultado
-    Navigator.pop(context, update);
+    if (result != null) {
+      // Manejar resultado de nueva toma
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final changesCount = _updateItems.where((item) => item.previousStock != item.newStock).length;
-
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Actualizar Inventario'),
+        title: const Text('Gestión de Inventario'),
         backgroundColor: Colors.white,
         foregroundColor: const Color.fromARGB(255, 88, 63, 128),
         elevation: 0,
         actions: [
-          Badge(
-            label: Text(changesCount.toString()),
-            child: IconButton(
-              icon: const Icon(Icons.change_circle),
-              onPressed: () {
-                _showChangesSummary();
-              },
-            ),
+          IconButton(
+            icon: const Icon(Icons.history),
+            onPressed: _showHistory,
+            tooltip: 'Historial de actualizaciones',
           ),
         ],
       ),
       body: Column(
         children: [
-          // Header informativo
-          _buildUpdateHeader(),
+          // Resumen de balance
+          _buildBalanceCard(),
           
-          // Búsqueda
-          _buildSearchSection(),
+          // Acciones rápidas
+          _buildQuickActions(),
           
-          // Lista de productos
+          // Historial reciente
           Expanded(
-            child: _buildProductList(),
+            child: _buildRecentHistory(),
           ),
-          
-          // Notas y acciones
-          _buildFooterSection(),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _navigateToUpdateInventory,
+        backgroundColor: const Color.fromARGB(255, 88, 63, 128),
+        child: const Icon(Icons.inventory_2, color: Colors.white),
+      ),
+    );
+  }
+
+  Widget _buildBalanceCard() {
+    return Card(
+      margin: const EdgeInsets.all(16),
+      elevation: 4,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            const Text(
+              'Resumen de Inventario',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color.fromARGB(255, 88, 63, 128),
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (_currentBalance != null) ...[
+              _buildBalanceMetric('Total Items', _currentBalance!.totalItems.toString()),
+              _buildBalanceMetric('Coinciden', _currentBalance!.matchedItems.toString()),
+              _buildBalanceMetric('Discrepancias', _currentBalance!.discrepancyItems.toString()),
+              _buildBalanceMetric('Faltantes', _currentBalance!.missingItems.toString()),
+              _buildBalanceMetric('Precisión', '${_currentBalance!.accuracyRate.toStringAsFixed(1)}%'),
+              _buildBalanceMetric('Diferencia Valor', '\$${_currentBalance!.totalValueDifference.toStringAsFixed(2)}'),
+            ] else ...[
+              const Text('No hay datos de balance disponibles'),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBalanceMetric(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(color: Colors.grey)),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
         ],
       ),
     );
   }
 
-  Widget _buildUpdateHeader() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.blue[50],
-        border: Border.all(color: Colors.blue[100]!),
-      ),
+  Widget _buildQuickActions() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
-          const Icon(Icons.info, color: Colors.blue),
-          const SizedBox(width: 12),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Actualizando: ${widget.customerName}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.blue,
+            child: Card(
+              child: InkWell(
+                onTap: _navigateToUpdateInventory,
+                child: const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      Icon(Icons.update, color: Colors.blue, size: 32),
+                      SizedBox(height: 8),
+                      Text('Actualizar', textAlign: TextAlign.center),
+                    ],
                   ),
                 ),
-                Text(
-                  'Por: ${widget.updatedBy} • ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.blue[600],
+              ),
+            ),
+          ),
+          Expanded(
+            child: Card(
+              child: InkWell(
+                onTap: _navigateToNewInventory,
+                child: const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      Icon(Icons.add_box, color: Colors.green, size: 32),
+                      SizedBox(height: 8),
+                      Text('Nueva Toma', textAlign: TextAlign.center),
+                    ],
                   ),
                 ),
-              ],
+              ),
+            ),
+          ),
+          Expanded(
+            child: Card(
+              child: InkWell(
+                onTap: _showBalanceDetails,
+                child: const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      Icon(Icons.analytics, color: Colors.orange, size: 32),
+                      SizedBox(height: 8),
+                      Text('Balance', textAlign: TextAlign.center),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
         ],
@@ -218,439 +210,147 @@ class _ActualizarInventarioScreenState extends State<ActualizarInventarioScreen>
     );
   }
 
-  Widget _buildSearchSection() {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: TextField(
-        controller: _searchController,
-        decoration: InputDecoration(
-          hintText: 'Buscar productos...',
-          prefixIcon: const Icon(Icons.search),
-          suffixIcon: IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: _addNewProduct,
-            tooltip: 'Agregar nuevo producto',
-          ),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
+  Widget _buildRecentHistory() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.all(16),
+          child: Text(
+            'Actualizaciones Recientes',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
         ),
-        onChanged: (value) {
-          setState(() {
-            _searchQuery = value;
-          });
-        },
-      ),
+        Expanded(
+          child: _updateHistory.isEmpty
+              ? _buildEmptyHistory()
+              : ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: _updateHistory.length,
+                  itemBuilder: (context, index) {
+                    return _buildHistoryItem(_updateHistory[index]);
+                  },
+                ),
+        ),
+      ],
     );
   }
 
-  Widget _buildProductList() {
-    if (_filteredItems.isEmpty) {
-      return _buildEmptyState();
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      itemCount: _filteredItems.length,
-      itemBuilder: (context, index) {
-        final item = _filteredItems[index];
-        return _buildProductItem(item);
-      },
-    );
-  }
-
-  Widget _buildEmptyState() {
+  Widget _buildEmptyHistory() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            Icons.inventory_2_outlined,
+            Icons.history_toggle_off,
             size: 64,
             color: Colors.grey[400],
           ),
           const SizedBox(height: 16),
-          Text(
-            _searchQuery.isEmpty ? 'No hay productos en inventario' : 'No se encontraron productos',
-            style: TextStyle(
-              color: Colors.grey[600],
-              fontSize: 16,
-            ),
+          const Text(
+            'No hay actualizaciones recientes',
+            style: TextStyle(color: Colors.grey),
           ),
-          if (_searchQuery.isEmpty) ...[
-            const SizedBox(height: 16),
-            ElevatedButton.icon(
-              onPressed: _addNewProduct,
-              icon: const Icon(Icons.add),
-              label: const Text('Agregar Primer Producto'),
-            ),
-          ],
         ],
       ),
     );
   }
 
-  Widget _buildProductItem(InventoryUpdateItem item) {
-    final hasChanges = item.previousStock != item.newStock;
-
+  Widget _buildHistoryItem(InventoryUpdate update) {
     return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: hasChanges ? 2 : 0,
-      color: hasChanges ? Colors.blue[50] : Colors.white,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: const Icon(Icons.inventory, color: Colors.blue),
+        title: Text('Actualización - ${DateFormat('dd/MM/yy HH:mm').format(update.timestamp)}'),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Indicador de cambios
-            Container(
-              width: 4,
-              height: 60,
-              decoration: BoxDecoration(
-                color: hasChanges ? _getChangeColor(item) : Colors.transparent,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(width: 12),
-            
-            // Información del producto
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.productName,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    item.sku,
-                    style: const TextStyle(
-                      color: Colors.grey,
-                      fontSize: 12,
-                    ),
-                  ),
-                  if (hasChanges) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      _getChangeText(item),
-                      style: TextStyle(
-                        color: _getChangeColor(item),
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            
-            // Controles de stock
-            Column(
-              children: [
-                Text(
-                  'Anterior: ${item.previousStock}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  width: 100,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey[300]!),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.remove, size: 16),
-                        onPressed: () {
-                          if (item.newStock > 0) {
-                            _updateStock(item.productId, item.newStock - 1);
-                          }
-                        },
-                      ),
-                      Expanded(
-                        child: TextField(
-                          textAlign: TextAlign.center,
-                          decoration: const InputDecoration(
-                            border: InputBorder.none,
-                            contentPadding: EdgeInsets.zero,
-                          ),
-                          controller: TextEditingController(text: item.newStock.toString()),
-                          keyboardType: TextInputType.number,
-                          onChanged: (value) {
-                            final newStock = int.tryParse(value) ?? 0;
-                            _updateStock(item.productId, newStock);
-                          },
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.add, size: 16),
-                        onPressed: () {
-                          _updateStock(item.productId, item.newStock + 1);
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+            Text('Por: ${update.updatedBy}'),
+            Text('Cliente: ${update.customerName}'),
+            Text('${update.items.length} productos actualizados'),
           ],
         ),
+        trailing: Chip(
+          label: Text('${update.balance.accuracyRate.toStringAsFixed(0)}%'),
+          backgroundColor: update.balance.accuracyRate > 90 ? Colors.green : Colors.orange,
+        ),
+        onTap: () => _showUpdateDetails(update),
       ),
     );
   }
 
-  Color _getChangeColor(InventoryUpdateItem item) {
-    if (item.newStock == 0) return Colors.red;
-    if (item.newStock > item.previousStock) return Colors.green;
-    if (item.newStock < item.previousStock) return Colors.orange;
-    return Colors.grey;
-  }
-
-  String _getChangeText(InventoryUpdateItem item) {
-    if (item.newStock == 0) return 'PRODUCTO ELIMINADO';
-    if (item.newStock > item.previousStock) return '+${item.difference} unidades agregadas';
-    if (item.newStock < item.previousStock) return '${item.difference} unidades removidas';
-    return 'Sin cambios';
-  }
-
-  Widget _buildFooterSection() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Colors.grey[300]!)),
-      ),
-      child: Column(
-        children: [
-          TextField(
-            controller: _notesController,
-            decoration: const InputDecoration(
-              hintText: 'Agregar notas sobre la actualización...',
-              border: OutlineInputBorder(),
-              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            ),
-            maxLines: 2,
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancelar'),
+  void _showHistory() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Historial Completo'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: _updateHistory.isEmpty
+              ? const Text('No hay historial disponible')
+              : ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _updateHistory.length,
+                  itemBuilder: (context, index) {
+                    return _buildHistoryItem(_updateHistory[index]);
+                  },
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: _confirmUpdate,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color.fromARGB(255, 88, 63, 128),
-                  ),
-                  child: const Text('Guardar Cambios'),
-                ),
-              ),
-            ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cerrar'),
           ),
         ],
       ),
     );
   }
 
-  void _showChangesSummary() {
-    final changes = _updateItems.where((item) => item.previousStock != item.newStock).toList();
+  void _showUpdateDetails(InventoryUpdate update) {
+    showDialog(
+      context: context,
+      builder: (context) => UpdateDetailsDialog(update: update),
+    );
+  }
+
+  void _showBalanceDetails() {
+    if (_currentBalance == null) return;
     
     showDialog(
       context: context,
-      builder: (context) => ChangesSummaryDialog(changes: changes),
+      builder: (context) => BalanceDetailsDialog(balance: _currentBalance!),
     );
   }
 }
 
+class UpdateDetailsDialog extends StatelessWidget {
+  final InventoryUpdate update;
 
-// Diálogo para agregar nuevo producto
-class AddProductDialog extends StatefulWidget {
-  final Function(String, String, int) onProductAdded;
-
-  const AddProductDialog({super.key, required this.onProductAdded});
-
-  @override
-  State<AddProductDialog> createState() => _AddProductDialogState();
-}
-
-class _AddProductDialogState extends State<AddProductDialog> {
-  final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _skuController = TextEditingController();
-  final TextEditingController _stockController = TextEditingController(text: '0');
+  const UpdateDetailsDialog({super.key, required this.update});
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Agregar Nuevo Producto'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _nameController,
-            decoration: const InputDecoration(
-              labelText: 'Nombre del Producto',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _skuController,
-            decoration: const InputDecoration(
-              labelText: 'SKU/Código',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _stockController,
-            decoration: const InputDecoration(
-              labelText: 'Stock Inicial',
-              border: OutlineInputBorder(),
-            ),
-            keyboardType: TextInputType.number,
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancelar'),
-        ),
-        ElevatedButton(
-          onPressed: () {
-            if (_nameController.text.isNotEmpty && _skuController.text.isNotEmpty) {
-              widget.onProductAdded(
-                _nameController.text,
-                _skuController.text,
-                int.tryParse(_stockController.text) ?? 0,
-              );
-              Navigator.pop(context);
-            }
-          },
-          child: const Text('Agregar'),
-        ),
-      ],
-    );
-  }
-}
-
-// Diálogo de confirmación de actualización
-class UpdateConfirmationDialog extends StatelessWidget {
-  final List<InventoryUpdateItem> updateItems;
-  final String customerName;
-  final String updatedBy;
-  final String notes;
-  final VoidCallback onConfirm;
-
-  const UpdateConfirmationDialog({
-    super.key,
-    required this.updateItems,
-    required this.customerName,
-    required this.updatedBy,
-    required this.notes,
-    required this.onConfirm,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final addedCount = updateItems.where((item) => item.action == 'added').length;
-    final updatedCount = updateItems.where((item) => item.action == 'updated').length;
-    final removedCount = updateItems.where((item) => item.action == 'removed').length;
-
-    return AlertDialog(
-      title: const Text('Confirmar Actualización'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Cliente: $customerName'),
-          Text('Actualizado por: $updatedBy'),
-          Text('Hora: ${DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now())}'),
-          const SizedBox(height: 16),
-          
-          if (addedCount > 0) Text('• $addedCount productos agregados'),
-          if (updatedCount > 0) Text('• $updatedCount productos actualizados'),
-          if (removedCount > 0) Text('• $removedCount productos removidos'),
-          
-          if (notes.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            const Text('Notas:'),
-            Text(notes, style: TextStyle(color: Colors.grey[600])),
-          ],
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Revisar'),
-        ),
-        ElevatedButton(
-          onPressed: () {
-            Navigator.pop(context);
-            onConfirm();
-          },
-          child: const Text('Confirmar'),
-        ),
-      ],
-    );
-  }
-}
-
-// Diálogo de resumen de cambios
-class ChangesSummaryDialog extends StatelessWidget {
-  final List<InventoryUpdateItem> changes;
-
-  const ChangesSummaryDialog({super.key, required this.changes});
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Row(
-        children: [
-          Icon(Icons.change_circle),
-          SizedBox(width: 8),
-          Text('Resumen de Cambios'),
-        ],
-      ),
+      title: const Text('Detalles de Actualización'),
       content: SizedBox(
         width: double.maxFinite,
-        child: ListView.builder(
-          shrinkWrap: true,
-          itemCount: changes.length,
-          itemBuilder: (context, index) {
-            final item = changes[index];
-            return ListTile(
-              leading: Icon(
-                _getChangeIcon(item.action),
-                color: _getChangeColor(item),
-              ),
-              title: Text(item.productName),
-              subtitle: Text(item.sku),
-              trailing: Text(
-                _getChangeText(item),
-                style: TextStyle(
-                  color: _getChangeColor(item),
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            );
-          },
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildDetailRow('Fecha:', DateFormat('dd/MM/yyyy HH:mm').format(update.timestamp)),
+              _buildDetailRow('Actualizado por:', update.updatedBy),
+              _buildDetailRow('Cliente:', update.customerName),
+              _buildDetailRow('Notas:', update.notes.isEmpty ? 'Sin notas' : update.notes),
+              
+              const SizedBox(height: 16),
+              const Text('Productos actualizados:', style: TextStyle(fontWeight: FontWeight.bold)),
+              ...update.items.map((item) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Text('• ${item.productName}: ${item.previousStock} → ${item.newStock} (${item.difference > 0 ? '+' : ''}${item.difference})'),
+              )),
+            ],
+          ),
         ),
       ),
       actions: [
@@ -662,27 +362,67 @@ class ChangesSummaryDialog extends StatelessWidget {
     );
   }
 
-  IconData _getChangeIcon(String action) {
-    switch (action) {
-      case 'added': return Icons.add_circle;
-      case 'removed': return Icons.remove_circle;
-      default: return Icons.edit;
-    }
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
+          ),
+          Expanded(child: Text(value)),
+        ],
+      ),
+    );
+  }
+}
+
+class BalanceDetailsDialog extends StatelessWidget {
+  final InventoryBalance balance;
+
+  const BalanceDetailsDialog({super.key, required this.balance});
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Detalles del Balance'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildBalanceDetail('Total de items:', balance.totalItems.toString()),
+            _buildBalanceDetail('Items que coinciden:', balance.matchedItems.toString()),
+            _buildBalanceDetail('Discrepancias:', balance.discrepancyItems.toString()),
+            _buildBalanceDetail('Items faltantes:', balance.missingItems.toString()),
+            _buildBalanceDetail('Tasa de precisión:', '${balance.accuracyRate.toStringAsFixed(1)}%'),
+            _buildBalanceDetail('Diferencia de valor:', '\$${balance.totalValueDifference.toStringAsFixed(2)}'),
+            _buildBalanceDetail('Calculado el:', DateFormat('dd/MM/yyyy HH:mm').format(balance.calculationDate)),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cerrar'),
+        ),
+      ],
+    );
   }
 
-  Color _getChangeColor(InventoryUpdateItem item) {
-    switch (item.action) {
-      case 'added': return Colors.green;
-      case 'removed': return Colors.red;
-      default: return Colors.orange;
-    }
-  }
-
-  String _getChangeText(InventoryUpdateItem item) {
-    switch (item.action) {
-      case 'added': return '+${item.difference}';
-      case 'removed': return 'ELIMINADO';
-      default: return item.difference.toString();
-    }
+  Widget _buildBalanceDetail(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
+          Text(value),
+        ],
+      ),
+    );
   }
 }
