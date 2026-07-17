@@ -62,28 +62,7 @@ class UserPage extends StatelessWidget {
           ),
         ),
       ),
-      bottomNavigationBar: CustomCircleNavBar(
-        selectedIndex: 1, 
-        onItemTapped: (index) {
-          switch (index) {
-            case 0:
-              Navigator.pushReplacementNamed(context, '/home');
-              break;
-            case 1:
-              Navigator.pushReplacementNamed(context, '/users');
-              break;
-            case 2:
-              Navigator.pushReplacementNamed(context, '/car_shop_screen');
-              break;
-            case 3:
-              Navigator.pushReplacementNamed(context, '/purchase_history');
-              break;
-            case 4:
-              Navigator.pushReplacementNamed(context, '/profile_screen');
-              break;
-          }
-        },
-      ),
+
     );
   }
 }

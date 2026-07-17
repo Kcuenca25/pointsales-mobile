@@ -131,18 +131,7 @@ class OrderSummary extends StatelessWidget {
           ],
         ),
       ),
-      bottomNavigationBar: CustomCircleNavBar(
-        selectedIndex: 2, // Cambia según la posición de esta pantalla
-        onItemTapped: (index) {
-          if (index == 0) {
-            Navigator.pushReplacementNamed(context, '/home');
-          } else if (index == 1) {
-            Navigator.pushReplacementNamed(context, '/users');
-          } else if (index == 2) {
-            Navigator.pushReplacementNamed(context, '/products');
-          }
-        },
-      ),
+
     );
   }
 }

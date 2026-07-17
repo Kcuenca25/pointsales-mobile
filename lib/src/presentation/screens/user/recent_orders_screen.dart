@@ -11,6 +11,8 @@ import 'package:ecomerce_app/src/data/api_repository/odooOrderService.dart';
 import 'package:ecomerce_app/src/data/api_repository/odoo_service_enhanced.dart';
 import 'package:ecomerce_app/src/data/api_repository/odoo_product_service.dart';
 import 'package:ecomerce_app/src/services/service_company.dart';
+import 'package:ecomerce_app/src/config/api_config.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 
 
@@ -39,18 +41,33 @@ class _RecentOrdersScreenState extends State<RecentOrdersScreen> {
   int _resultadosCount = 0;
   late OdooProductService _productService;
 
+  // ✅ CONTROLADOR PARA EL BUSCADOR (debe ser campo de clase, no inline)
+  final TextEditingController _searchOrderController = TextEditingController();
+  String _searchOrderQuery = '';
+
   // 🎯 CREA UNA COPIA MUTABLE DE LAS ÓRDENES
   List<Map<String, dynamic>> _ordenesLocales = [];
 
- @override
+  @override
   void initState() {
     super.initState();
     _ordenesLocales = List<Map<String, dynamic>>.from(widget.recentOrders);
     _resultadosCount = _ordenesLocales.length;
     _initializeServices();
-    _cargarOrdenesDesdeOdoo(); 
-    //_ensureCompanyServiceInitialized();
+    _cargarOrdenesDesdeOdoo();
+    // ✅ Escuchar cambios en el buscador
+    _searchOrderController.addListener(() {
+      setState(() {
+        _searchOrderQuery = _searchOrderController.text.toLowerCase();
+        _aplicarFiltros();
+      });
+    });
+  }
 
+  @override
+  void dispose() {
+    _searchOrderController.dispose();
+    super.dispose();
   }
 
  void _initializeServices() {
@@ -64,8 +81,8 @@ class _RecentOrdersScreenState extends State<RecentOrdersScreen> {
     } else {
       // Fallback si no está inicializado
       final fallbackService = OdooServiceEnhanced(
-        baseUrl: 'https://solutions.tailorw.net',
-        dbName: 'pointsales_prodv18',
+        baseUrl: ApiConfig.baseUrl,
+        dbName: 'pointsales-v18',
       );
       _productService = OdooProductService(fallbackService);
     }
@@ -107,44 +124,84 @@ void _verificarEstadosOrdenes() {
 
   Future<void> _cargarOrdenesDesdeOdoo() async {
     try {
+      // Intentar obtener el servicio del CompanyService (singleton)
       final companyService = CompanyService();
-      final odooService = companyService.odooService;
-      
-      if (odooService == null) {
-        print('❌ OdooService no inicializado en CompanyService');
-        return;
+      OdooServiceEnhanced? odooService = companyService.odooService;
+
+      // ✅ Si no hay sesión activa, crear una nueva leyendo SharedPreferences directamente
+      if (odooService == null || odooService.uid == null) {
+        print('⚠️ OdooService sin sesión, conectando desde SharedPreferences...');
+        final prefs = await SharedPreferences.getInstance();
+
+        // Leer dominio con todas las claves posibles
+        final domain = prefs.getString('odoo_domain') ?? '';
+        if (domain.isEmpty) {
+          print('❌ No hay dominio guardado, no se pueden cargar órdenes');
+          return;
+        }
+
+        // Leer credenciales con todas las claves posibles
+        final email = prefs.getString('userEmail') ??
+            prefs.getString('username') ??
+            prefs.getString('userName') ??
+            prefs.getString('current_user') ??
+            prefs.getString('email') ??
+            'admin@tailorw.com'; // fallback final
+        final password = prefs.getString('session_password') ??
+            prefs.getString('password') ??
+            'A001admin';
+
+        print('🔑 Conectando como: $email a https://$domain');
+
+        odooService = OdooServiceEnhanced(
+          baseUrl: 'https://$domain',
+          dbName: ApiConfig.dbName.isNotEmpty ? ApiConfig.dbName : 'pointsales-v18',
+        );
+        final ok = await odooService.login(email, password);
+        if (!ok) {
+          print('❌ No se pudo conectar a Odoo para cargar órdenes');
+          return;
+        }
+        print('✅ Sesión recuperada para cargar órdenes');
       }
-      
-      // ✅ USAR LA MISMA INSTANCIA, NO CREAR UNA NUEVA
+
       final orderService = OdooOrderService(odooService);
       final ordenesOdoo = await orderService.getSaleOrders();
-      
-      setState(() {
-        _ordenesLocales = ordenesOdoo.map((ordenOdoo) {
-          return {
-            'orden': ordenOdoo['id'].toString(),
-            'cliente': ordenOdoo['partner_id'] is List 
-                ? (ordenOdoo['partner_id'][1] as String) 
-                : 'Cliente Odoo',
-            'fecha': ordenOdoo['date_order'],
-            'estado': _getEstadoVisual(ordenOdoo),
-            'state_odoo': ordenOdoo['state'],
-            'invoice_status': ordenOdoo['invoice_status'],
-            'note': ordenOdoo['note'],
-            'total': (ordenOdoo['amount_total'] as num).toDouble(),
-            'referencia_odoo': ordenOdoo['name'],
-          };
-        }).toList();
-        
-        _resultadosCount = _ordenesLocales.length;
-      });
-      
+
+      // ✅ Solo actualiza si recibimos datos
+      if (ordenesOdoo.isNotEmpty && mounted) {
+        setState(() {
+          _ordenesLocales = ordenesOdoo.map((ordenOdoo) {
+            return {
+              'orden': ordenOdoo['id'].toString(),
+              'cliente': ordenOdoo['partner_id'] is List
+                  ? (ordenOdoo['partner_id'][1] as String)
+                  : 'Cliente Odoo',
+              'fecha': ordenOdoo['date_order'],
+              'estado': _getEstadoVisual(ordenOdoo),
+              'state_odoo': ordenOdoo['state'],
+              'invoice_status': ordenOdoo['invoice_status'],
+              'note': ordenOdoo['note'],
+              'total': (ordenOdoo['amount_total'] as num).toDouble(),
+              'referencia_odoo': ordenOdoo['name'],
+            };
+          }).toList();
+
+          _resultadosCount = _ordenesLocales.length;
+        });
+        print('✅ Órdenes cargadas en pantalla: ${_ordenesLocales.length}');
+      } else {
+        print('⚠️ getSaleOrders devolvió vacío, se mantienen las órdenes actuales');
+      }
+
       _verificarEstadosOrdenes();
-      
+
     } catch (e) {
       print('❌ Error cargando órdenes: $e');
+      // ✅ NO limpiar _ordenesLocales — mantener lo que hay en pantalla
     }
   }
+
 
   
 // En tu pantalla de ventas - validar antes de vender
@@ -238,10 +295,10 @@ Future<void> _crearOrdenPrueba() async {
   try {
     final odooService = OdooServiceEnhanced(
       baseUrl: 'https://pointsalesqa.tailorw.net',
-      dbName: 'pointsales_prodv18',
+      dbName: 'pointsales-v18',
     );
     
-    bool isAuthenticated = await odooService.login('admin', 'admin');
+    bool isAuthenticated = await odooService.login(ApiConfig.defaultUsername, ApiConfig.defaultPassword);
     
     if (isAuthenticated) {
       final orderService = OdooOrderService(odooService);
@@ -361,7 +418,10 @@ String _getStatusDescription(String status) {
 String _getEstadoVisual(Map<String, dynamic> order) {
   final estadoOdoo = order['state_odoo'] ?? 'draft';
   final invoiceStatus = order['invoice_status'] ?? 'no';
-  final note = order['note'] ?? '';
+  
+  // Odoo retorna `false` (booleano) si el campo de texto está vacío.
+  final noteValue = order['note'];
+  final note = noteValue is String ? noteValue : (noteValue?.toString() ?? '');
   
   // Si tiene nota de completado, mostrar como "Completada"
   if (note.contains('✅') || note.contains('completado')) {
@@ -377,20 +437,29 @@ String _getEstadoVisual(Map<String, dynamic> order) {
   return _mapearEstadoOdoo(estadoOdoo);
 }
 
-  // 🎯 ACTUALIZA _aplicarFiltros
+  // 🎯 FILTROS: estado + búsqueda por texto
   void _aplicarFiltros() {
     setState(() {
       _resultadosCount = _ordenesLocales.where((order) {
-        return estadoFiltro == "Todas" || order['estado'] == estadoFiltro;
+        final estadoMatch = estadoFiltro == "Todas" || order['estado'] == estadoFiltro;
+        final searchMatch = _searchOrderQuery.isEmpty ||
+            (order['cliente']?.toString().toLowerCase().contains(_searchOrderQuery) ?? false) ||
+            (order['referencia_odoo']?.toString().toLowerCase().contains(_searchOrderQuery) ?? false) ||
+            (order['orden']?.toString().contains(_searchOrderQuery) ?? false);
+        return estadoMatch && searchMatch;
       }).length;
     });
   }
 
-  // 🎯 ACTUALIZA _buildOrdersList
+  // 🎯 LISTA CON FILTRO DE ESTADO + BÚSQLÚEDA
   Widget _buildOrdersList() {
     List<Map<String, dynamic>> filteredOrders = _ordenesLocales.where((order) {
       final estadoMatch = estadoFiltro == "Todas" || order['estado'] == estadoFiltro;
-      return estadoMatch; 
+      final searchMatch = _searchOrderQuery.isEmpty ||
+          (order['cliente']?.toString().toLowerCase().contains(_searchOrderQuery) ?? false) ||
+          (order['referencia_odoo']?.toString().toLowerCase().contains(_searchOrderQuery) ?? false) ||
+          (order['orden']?.toString().contains(_searchOrderQuery) ?? false);
+      return estadoMatch && searchMatch;
     }).toList();
 
     _sortOrdersByDate();
@@ -398,7 +467,7 @@ String _getEstadoVisual(Map<String, dynamic> order) {
     if (filteredOrders.isEmpty) return _buildEmptyState();
 
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8), 
+      padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: filteredOrders.length,
       itemBuilder: (context, index) {
         final order = filteredOrders[index];
@@ -407,7 +476,6 @@ String _getEstadoVisual(Map<String, dynamic> order) {
       },
     );
   }
-
 
 Widget _buildFilterSection() {
   return Container(
@@ -419,10 +487,18 @@ Widget _buildFilterSection() {
           children: [
             Expanded(
               child: TextField(
-                controller: TextEditingController(),
+                controller: _searchOrderController,
                 decoration: InputDecoration(
                   hintText: 'Buscar órdenes...',
                   prefixIcon: const Icon(Icons.search),
+                  suffixIcon: _searchOrderQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () {
+                            _searchOrderController.clear();
+                          },
+                        )
+                      : null,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide.none,
@@ -430,7 +506,6 @@ Widget _buildFilterSection() {
                   filled: true,
                   fillColor: Colors.white,
                 ),
-                onChanged: (value) => setState(() {}),
               ),
             ),
             const SizedBox(width: 12),
@@ -654,9 +729,7 @@ Widget build(BuildContext context) {
     backgroundColor: Colors.white,
     appBar: CustomAppBar(
       title: '',
-      onOrdenTerminada: () {
-        setState(() {});
-      },
+
       showTitle: false,
     ),
     drawer: AppDrawer(
@@ -734,10 +807,7 @@ Widget build(BuildContext context) {
         Expanded(child: _buildOrdersList()),
       ],
     ),
-    bottomNavigationBar: CustomCircleNavBar(
-      selectedIndex: _selectedIndex,
-      onItemTapped: _onItemTapped,
-    ),
+
     floatingActionButton: FloatingActionButton(
       heroTag: "nuevaOrden",
       onPressed: _crearNuevaOrden,
@@ -1212,10 +1282,10 @@ Future<void> _ejecutarAccionOrden(
   try {
     final odooService = OdooServiceEnhanced(
       baseUrl: 'https://pointsalesqa.tailorw.net',
-      dbName: 'pointsales_prodv18',
+      dbName: 'pointsales-v18',
     );
     
-    bool isAuthenticated = await odooService.login('admin', 'admin');
+    bool isAuthenticated = await odooService.login(ApiConfig.defaultUsername, ApiConfig.defaultPassword);
     
     if (isAuthenticated) {
       final orderService = OdooOrderService(odooService);
@@ -1337,8 +1407,57 @@ Widget _buildArticuloItemCompact({
     ],
   );
 }
+  Future<List<Map<String, dynamic>>> _fetchOrderLines(String orderId) async {
+    try {
+      final odooService = CompanyService().odooService;
+      if (odooService == null || odooService.uid == null) return [];
+      
+      final orderResult = await odooService.callKw({
+        'service': 'object',
+        'method': 'execute_kw',
+        'args': [
+          odooService.dbName, odooService.uid, odooService.password,
+          'sale.order', 'search_read',
+          [[["id", "=", int.tryParse(orderId) ?? 0]]],
+          {'fields': ['order_line'], 'limit': 1}
+        ],
+      });
+      
+      if (orderResult is! List || orderResult.isEmpty) return [];
+      final List<dynamic> lineIds = orderResult[0]['order_line'] ?? [];
+      if (lineIds.isEmpty) return [];
+      
+      final linesResult = await odooService.callKw({
+        'service': 'object',
+        'method': 'execute_kw',
+        'args': [
+          odooService.dbName, odooService.uid, odooService.password,
+          'sale.order.line', 'search_read',
+          [[["id", "in", lineIds]]],
+          {'fields': ['product_id', 'product_uom_qty', 'price_unit']}
+        ],
+      });
+      
+      if (linesResult is! List) return [];
+      
+      return linesResult.map((line) {
+        final product = line['product_id'] is List ? line['product_id'][1] : 'Producto desconocido';
+        return {
+          'nombre': product.toString(),
+          'cantidad': (line['product_uom_qty'] as num?)?.toInt() ?? 1,
+          'precio': (line['price_unit'] as num?)?.toDouble() ?? 0.0,
+        };
+      }).toList();
+    } catch (e) {
+      print('❌ Error obteniendo líneas de la orden: $e');
+      return [];
+    }
+  }
+
 void _mostrarDetallesOrden(Map<String, dynamic> order) {
-  final List<dynamic> articulos = order['articulos'] ?? [];
+  List<dynamic> articulos = order['articulos'] ?? [];
+  bool isLoadingArticulos = articulos.isEmpty && order['estado'] != 'Desconocido' && order['total'] != null; // Si vino de Odoo y no tiene arts, cargar.
+
   
   showModalBottomSheet(
     context: context,
@@ -1348,12 +1467,29 @@ void _mostrarDetallesOrden(Map<String, dynamic> order) {
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
     builder: (context) {
-      return Container(
-        padding: const EdgeInsets.all(20),
-        height: MediaQuery.of(context).size.height * 0.8,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      return StatefulBuilder(
+        builder: (context, setModalState) {
+          // Si no tenemos artículos, los buscamos dinámicamente
+          if (isLoadingArticulos) {
+            isLoadingArticulos = false;
+            _fetchOrderLines(order['orden'].toString()).then((lines) {
+              if (mounted) {
+                setModalState(() {
+                  articulos = lines;
+                  order['articulos'] = lines; // Guardamos en memoria para no volver a cargar
+                });
+                setState(() {}); // Actualiza la lista principal también
+              }
+            });
+            // Mostraremos un loading abajo mientras tanto
+          }
+
+          return Container(
+            padding: const EdgeInsets.all(20),
+            height: MediaQuery.of(context).size.height * 0.8,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
             // Header
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1389,52 +1525,104 @@ void _mostrarDetallesOrden(Map<String, dynamic> order) {
             ),
             const Divider(),
             
-            // Lista de artículos
             Expanded(
-              child: articulos.isEmpty
-                  ? Center(
-                      child: Text(
-                        order['articulo'] ?? "Sin artículo especificado",
-                        style: TextStyle(color: Colors.grey.shade600),
+              child: (articulos.isEmpty && (order['articulos'] == null))
+                  ? const Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircularProgressIndicator(),
+                          SizedBox(height: 16),
+                          Text("Cargando artículos...", 
+                            style: TextStyle(color: Colors.grey)),
+                        ],
                       ),
                     )
-                  : ListView.builder(
-                      itemCount: articulos.length,
-                      itemBuilder: (context, index) {
-                        final articulo = articulos[index];
-                        return _buildArticuloDetalle(articulo);
-                      },
-                    ),
+                  : articulos.isEmpty
+                      ? const Center(
+                          child: Text(
+                            "Sin artículos",
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        )
+                      : ListView.separated(
+                          itemCount: articulos.length,
+                          separatorBuilder: (_, __) => const Divider(),
+                          itemBuilder: (context, index) {
+                            final art = articulos[index];
+                            return ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade100,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(Icons.shopping_bag, 
+                                  color: Colors.grey, size: 20),
+                              ),
+                              title: Text(
+                                art['nombre'] ?? "Artículo",
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              subtitle: Text(
+                                "Cant: ${art['cantidad']} x \$${(art['precio'] as num?)?.toStringAsFixed(2) ?? '0.00'}",
+                                style: TextStyle(
+                                  color: Colors.grey.shade600,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              trailing: Text(
+                                "\$${((art['cantidad'] as int? ?? 1) * (art['precio'] as num? ?? 0.0)).toStringAsFixed(2)}",
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.green,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
             ),
             
             const Divider(),
+            
             // Total
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  "Total:",
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    "Total:",
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-                Text(
-                  "\$${order['total']?.toStringAsFixed(2) ?? '0.00'}",
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 18,
-                    color: Colors.green,
+                  Text(
+                    "\$${(order['total'] as num?)?.toStringAsFixed(2) ?? '0.00'}",
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ],
         ),
       );
     },
+    );
+  },
   );
 }
+
 
 
 

@@ -77,9 +77,7 @@ class _HomeScreenState extends State<HomeScreen> {
         return Scaffold(
           appBar: CustomAppBar(
             title: _getTitleForIndex(_selectedIndex),
-            onOrdenTerminada: () {
-              setState(() {});
-            },
+
             showTitle: false,
             // ✅ PASAR LOS DATOS DEL PROVIDER AL CUSTOM APP BAR
             //companyName: usuarioProvider.companyName,
@@ -143,10 +141,7 @@ class _HomeScreenState extends State<HomeScreen> {
               PlaceSearchScreen(),
             ],
           ),
-          bottomNavigationBar: CustomCircleNavBar(
-            selectedIndex: _selectedIndex,
-            onItemTapped: _onItemTapped,
-          ),
+          
         );
       },
     );

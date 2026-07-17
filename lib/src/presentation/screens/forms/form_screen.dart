@@ -9,16 +9,8 @@ import 'package:ecomerce_app/src/config/api_config.dart';
 
 import 'package:provider/provider.dart'; 
 import 'package:ecomerce_app/src/providers/helper/usuario_providers.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-//import 'package:flutter/material.dart';
-//import 'package:local_auth/local_auth.dart'; 
-//import 'package:ecomerce_app/src/presentation/components/custon_form/custon_button.dart';
-//import 'package:ecomerce_app/src/presentation/components/custon_form/custon_text.dart';
-//import 'package:ecomerce_app/src/presentation/components/custon_form/custon_text_form_field.dart';
-//import 'package:ecomerce_app/src/presentation/screens/user/home_screen.dart';
-//import 'package:ecomerce_app/src/presentation/screens/forms/forgot_password_screen.dart'; 
-//import 'package:provider/provider.dart'; 
-//import 'package:ecomerce_app/src/providers/helper/usuario_providers.dart';
 import 'package:ecomerce_app/src/data/api_repository/odoo_auth_service.dart'; 
 
 class FormScreen extends StatefulWidget {
@@ -57,9 +49,10 @@ class _FormScreenState extends State<FormScreen> {
         _biometricAvailable = canCheckBiometrics && isDeviceSupported;
       });
 
-      if (_biometricAvailable) {
-        _authenticateWithBiometric();
-      }
+      // ✅ SE COMENTÓ EL AUTOLOGIN PARA PERMITIR CERRAR SESIÓN CORRECTAMENTE
+      // if (_biometricAvailable) {
+      //   _authenticateWithBiometric();
+      // }
     } catch (e) {
       print('Error verificando biometría: $e');
       setState(() {
@@ -86,7 +79,7 @@ class _FormScreenState extends State<FormScreen> {
 
       if (authenticated) {
         print('✅ Autenticación biométrica exitosa');
-        await _authenticateWithOdoo('admin', 'admin');
+        await _authenticateWithOdoo('admin@tailorw.com', 'A001admin');
       } else {
         setState(() {
           _errorMessage = 'Autenticación biométrica fallida o cancelada';
@@ -161,13 +154,17 @@ class _FormScreenState extends State<FormScreen> {
       await usuarioProvider.saveCompanyName(companyName); // ✅ GUARDAR EMPRESA
       await usuarioProvider.saveUserName(userName);       // ✅ GUARDAR NOMBRE USUARIO
       
+      // ✅ GUARDAR CONTRASEÑA DE SESIÓN DE ODDO PARA RE-LOGINS AUTOMÁTICOS EN OTRAS PANTALLAS
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('session_password', password);
+      // ✅ ACTUALIZAR CONFIGURACIÓN API GLOBAL
+      ApiConfig.defaultUsername = username;
+      ApiConfig.defaultPassword = password;
+      
       usuarioProvider.isAuthenticated = true;
       usuarioProvider.userId = userId;
 
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const HomeScreen()),
-      );
+      Navigator.pushReplacementNamed(context, '/select-company');
     } else {
       setState(() {
         _errorMessage = authResult['error'] ?? 'Error de autenticación Odoo';
@@ -196,10 +193,7 @@ class _FormScreenState extends State<FormScreen> {
       final success = await usuarioProvider.loginWithOdoo(username, password);
       
       if (success) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const HomeScreen()),
-        );
+        Navigator.pushReplacementNamed(context, '/select-company');
       } else {
         setState(() {
           _errorMessage = 'Credenciales incorrectas';
@@ -236,18 +230,12 @@ class _FormScreenState extends State<FormScreen> {
     });
 
     if (_login.currentState!.validate()) {
-      // ✅ USAR EL MÉTODO QUE PREFIERAS:
-      // Opción 1: Directo con OdooAuthService (actual)
+
       _authenticateWithOdoo(
         usernameController.text.trim(),
         passwordController.text.trim(),
       );
-      
-      // Opción 2: Con UsuarioProvider (alternativa)
-      // _authenticateWithUsuarioProvider(
-      //   usernameController.text.trim(),
-      //   passwordController.text.trim(),
-      // );
+    
     }
   }
 
@@ -266,7 +254,7 @@ class _FormScreenState extends State<FormScreen> {
       body: Container(
         width: double.infinity,
         height: double.infinity,
-        color: Colors.blue,
+        color: const Color.fromARGB(255, 11, 25, 107),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -281,7 +269,7 @@ class _FormScreenState extends State<FormScreen> {
             ),
             const SizedBox(height: 1),
             const CustomText(
-              text: 'VENTAS',
+              text: 'APP',
               fontSize: 33,
               fontWeight: FontWeight.bold,
               color: Colors.white,
@@ -311,15 +299,6 @@ class _FormScreenState extends State<FormScreen> {
                           color: Colors.black,
                         ),
                         
-                        // const SizedBox(height: 10),
-                        // const Text(
-                        //   'Conectando a Odoo PointSales',
-                        //   style: TextStyle(
-                        //     color: Colors.grey,
-                        //     fontSize: 14,
-                        //   ),
-                        //   textAlign: TextAlign.center,
-                        // ),
                         
                         const SizedBox(height: 16),
                         
@@ -422,44 +401,6 @@ class _FormScreenState extends State<FormScreen> {
                           ),
                         
                         const SizedBox(height: 20),
-                        
-                        // Información de conexión Odoo
-                        // Card(
-                        //   color: Colors.blue[50],
-                        //   child: Padding(
-                        //     padding: const EdgeInsets.all(12.0),
-                        //     child: Column(
-                        //       crossAxisAlignment: CrossAxisAlignment.start,
-                        //       children: [
-                        //         const Row(
-                        //           children: [
-                        //             Icon(Icons.cloud, color: Colors.blue),
-                        //             SizedBox(width: 8),
-                        //             Text(
-                        //               'Conexión Odoo',
-                        //               style: TextStyle(
-                        //                 fontWeight: FontWeight.bold,
-                        //                 color: Colors.blue,
-                        //               ),
-                        //             ),
-                        //           ],
-                        //         ),
-                        //         const SizedBox(height: 8),
-                        //         Text('Servidor: ${ApiConfig.baseUrl}'),
-                        //         Text('Base de datos: ${ApiConfig.dbName}'),
-                        //         const SizedBox(height: 4),
-                        //         const Text(
-                        //           '✅ Credenciales verificadas',
-                        //           style: TextStyle(
-                        //             fontSize: 12,
-                        //             color: Colors.green,
-                        //             fontWeight: FontWeight.bold,
-                        //           ),
-                        //         ),
-                        //       ],
-                        //     ),
-                        //   ),
-                        //),
                       ],
                     ),
                   ),

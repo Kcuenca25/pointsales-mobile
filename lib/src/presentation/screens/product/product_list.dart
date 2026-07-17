@@ -1,4 +1,5 @@
 import 'package:ecomerce_app/src/presentation/components/custon_bar_row/custon_bar_row.dart';
+import 'package:ecomerce_app/src/config/api_config.dart'; // ✅ Importar Config
 import 'package:flutter/material.dart';
 import 'package:ecomerce_app/src/data/api_repository/odoo_service_enhanced.dart';
 import 'package:ecomerce_app/src/data/api_repository/odoo_product_service.dart';
@@ -41,11 +42,15 @@ class _ProductListState extends State<ProductList> {
   Future<List<Product>> _loadProductsFromOdoo() async {
     try {
       final odooService = OdooServiceEnhanced(
-        baseUrl: 'https://pointsalesqa.tailorw.net/jsonrpc',
-        dbName: 'pointsales_prodv18',
+        baseUrl: ApiConfig.baseUrl,
+        dbName: ApiConfig.dbName,
       );
       
-      bool isAuthenticated = await odooService.login('admin', 'admin');
+      // ✅ USAR CREDENCIALES DEL CONFIG
+      bool isAuthenticated = await odooService.login(
+        ApiConfig.defaultUsername, 
+        ApiConfig.defaultPassword
+      );
       
       if (isAuthenticated) {
         final productService = OdooProductService(odooService);
@@ -305,18 +310,7 @@ class _ProductListState extends State<ProductList> {
           ],
         ),
       ),
-      bottomNavigationBar: CustomCircleNavBar(
-        selectedIndex: 2,
-        onItemTapped: (index) {
-          if (index == 0) {
-            Navigator.pushReplacementNamed(context, '/home');
-          } else if (index == 1) {
-            Navigator.pushReplacementNamed(context, '/users');
-          } else if (index == 2) {
-            Navigator.pushReplacementNamed(context, '/products');
-          }
-        },
-      ),
+
     );
   }
 }

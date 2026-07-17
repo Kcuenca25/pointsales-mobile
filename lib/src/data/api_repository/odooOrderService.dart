@@ -1,6 +1,7 @@
 import 'package:ecomerce_app/src/data/api_repository/odoo_service_enhanced.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-// odoo_order_service.dart
+// odoo_order_service.dart de venta
 
 class OdooOrderService {
   final OdooServiceEnhanced odooService;
@@ -10,9 +11,7 @@ class OdooOrderService {
   String _formatDateForOdoo(DateTime date) {
     return "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}:${date.second.toString().padLeft(2, '0')}";
   }
-  // ✅ CREAR ORDEN CON FLUJO AUTOMÁTICO
- 
-  // ✅ CREAR ORDEN CON FLUJO AUTOMÁTICO (CORREGIDO)
+
   Future<Map<String, dynamic>> createSaleOrder({
     required int partnerId,
     required List<Map<String, dynamic>> orderLines,
@@ -33,6 +32,26 @@ class OdooOrderService {
       // ✅ FECHA FORMATEADA CORRECTAMENTE
       final fechaFormateada = _formatDateForOdoo(DateTime.now());
 
+      // ✅ OBTENER LA COMPAÑÍA SELECCIONADA DIRECTAMENTE DE PREFERENCES
+      final prefs = await SharedPreferences.getInstance();
+      final selectedCompanyIdStr = prefs.getString('selected_company_id');
+      int? companyId;
+      if (selectedCompanyIdStr != null && selectedCompanyIdStr.isNotEmpty) {
+        companyId = int.tryParse(selectedCompanyIdStr);
+      }
+
+      // Preparar valores
+      final values = {
+        'partner_id': partnerId,
+        'date_order': fechaFormateada,
+        'order_line': orderLineValues,
+      };
+
+      // Inyectar company_id si está presente
+      if (companyId != null) {
+        values['company_id'] = companyId;
+      }
+
       // Crear la orden en Odoo
       final result = await odooService.callKw({
         'service': 'object',
@@ -43,13 +62,7 @@ class OdooOrderService {
           odooService.password,
           'sale.order',
           'create',
-          [
-            {
-              'partner_id': partnerId,
-              'date_order': fechaFormateada, // ✅ FORMATO CORRECTO
-              'order_line': orderLineValues,
-            }
-          ]
+          [values]
         ],
       });
 
@@ -147,7 +160,101 @@ class OdooOrderService {
   });
 }
 
-  // ✅ CONFIRMAR ORDEN (sale → "En Proceso")
+Future<List<Map<String, dynamic>>> searchProducts(String searchTerm) async {
+  try {
+    final result = await odooService.callKw({
+      'service': 'object',
+      'method': 'execute_kw',
+      'args': [
+        odooService.dbName,
+        odooService.uid,
+        odooService.password,
+        'product.product',
+        'search_read',
+        [
+          [
+            '|', '|', // OR operator
+            ['name', 'ilike', searchTerm],
+            ['default_code', 'ilike', searchTerm],
+            ['barcode', '=', searchTerm] // Para escanear códigos de barras
+          ]
+        ],
+        {
+          'fields': [
+            'id', 'name', 'default_code', 'barcode', 
+            'list_price', 'standard_price', 'qty_available',
+            'uom_id', 'image_1920', 'description_sale'
+          ],
+          'limit': 20,
+        }
+      ],
+    });
+
+    return (result as List).cast<Map<String, dynamic>>();
+  } catch (e) {
+    print('❌ Error buscando productos: $e');
+    return [];
+  }
+}
+
+Future<Map<String, dynamic>?> getProductByBarcode(String barcode) async {
+  try {
+    final result = await odooService.callKw({
+      'service': 'object',
+      'method': 'execute_kw',
+      'args': [
+        odooService.dbName,
+        odooService.uid,
+        odooService.password,
+        'product.product',
+        'search_read',
+        [
+          [['barcode', '=', barcode]]
+        ],
+        {
+          'fields': [
+            'id', 'name', 'default_code', 'barcode', 
+            'list_price', 'standard_price', 'qty_available',
+            'uom_id', 'image_1920', 'description_sale', 'taxes_id'
+          ],
+          'limit': 1,
+        }
+      ],
+    });
+
+    final products = (result as List).cast<Map<String, dynamic>>();
+    return products.isNotEmpty ? products.first : null;
+  } catch (e) {
+    print('❌ Error buscando producto por código de barras: $e');
+    return null;
+  }
+}
+// Método para verificar permisos
+Future<bool> checkUserPermissions() async {
+  try {
+    final result = await odooService.callKw({
+      'service': 'object',
+      'method': 'execute_kw',
+      'args': [
+        odooService.dbName,
+        odooService.uid,
+        odooService.password,
+        'res.users',
+        'read',
+        [
+          [odooService.uid],
+          ['groups_id']
+        ]
+      ],
+    });
+    
+    print('✅ Permisos del usuario: $result');
+    return true;
+  } catch (e) {
+    print('❌ Error verificando permisos: $e');
+    return false;
+  }
+}
   Future<Map<String, dynamic>> confirmSaleOrder(int orderId) async {
     try {
       final result = await odooService.callKw({
@@ -297,34 +404,50 @@ class OdooOrderService {
     }
   }
 
-  // ✅ OBTENER TODAS LAS ÓRDENES
-  Future<List<Map<String, dynamic>>> getSaleOrders({int limit = 50}) async {
-    try {
-      final result = await odooService.callKw({
-        'service': 'object',
-        'method': 'execute_kw',
-        'args': [
-          odooService.dbName,
-          odooService.uid,
-          odooService.password,
-          'sale.order',
-          'search_read',
-          [],
-          {
-            'fields': [
-              "id", "name", "state", "date_order", "partner_id", 
-              "amount_total", "invoice_status", "note"
-            ],
-            'limit': limit,
-            'order': 'id desc',
-          }
-        ],
-      });
+// En OdooOrderService
+Future<List<Map<String, dynamic>>> getSaleOrders() async {
+  try {
+    // ✅ CONTEXTO CON TODAS LAS EMPRESAS PERMITIDAS
+    final ctx = odooService.getContext();
+    // Si no hay compañías en el contexto, usar lista vacía (Odoo devolverá todo)
+    final allowedIds = odooService.allowedCompanyIds;
 
-      return (result as List).cast<Map<String, dynamic>>();
-    } catch (e) {
-      print('❌ Error obteniendo órdenes: $e');
-      return [];
+    final result = await odooService.callKw({
+      'service': 'object',
+      'method': 'execute_kw',
+      'args': [
+        odooService.dbName,
+        odooService.uid,
+        odooService.password,
+        'sale.order',
+        'search_read',
+        [[]], // dominio vacío = todas las órdenes
+        {
+          'fields': [
+            'id', 'name', 'partner_id', 'date_order', 'state',
+            'invoice_status', 'note', 'amount_total', 'amount_untaxed',
+            'amount_tax', 'company_id'
+          ],
+          'limit': 200,
+          'order': 'id desc',
+          // ✅ CONTEXTO MULTI-EMPRESA: incluye TODAS las empresas del usuario
+          'context': allowedIds.isNotEmpty
+              ? {'allowed_company_ids': allowedIds}
+              : ctx,
+        }
+      ],
+    });
+
+    if (result is List) {
+      print('✅ Órdenes de venta cargadas: ${result.length}');
+      return List<Map<String, dynamic>>.from(result);
     }
+    print('⚠️ getSaleOrders: el resultado no es una lista: $result');
+    return [];
+  } catch (e, stack) {
+    print('❌ Error obteniendo órdenes de venta: $e');
+    print('❌ Stack trace: $stack');
+    return [];
   }
+}
 }

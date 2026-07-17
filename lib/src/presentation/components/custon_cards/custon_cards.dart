@@ -1,17 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:ecomerce_app/src/presentation/screens/user/recent_orders_screen.dart';
-import 'package:ecomerce_app/src/domain/models/articulo.dart';
+//import 'package:ecomerce_app/src/domain/models/articulo.dart';
 import 'package:ecomerce_app/src/domain/models/customer_model.dart';
 import 'package:ecomerce_app/src/presentation/screens/user/orden_de_page.dart';
 import 'package:ecomerce_app/src/presentation/screens/product/product_list.dart';
-import 'package:ecomerce_app/src/presentation/screens/user/orden.dart';
-import 'package:ecomerce_app/src/presentation/screens/user/articuloSelectorCompleto.dart';
+//import 'package:ecomerce_app/src/presentation/screens/user/orden.dart';
+import 'package:ecomerce_app/src/presentation/screens/user/productosViewScreen.dart';
 import 'package:ecomerce_app/src/presentation/screens/botton_navigation_bar_screen/02-client_screen.dart';
 import 'package:ecomerce_app/src/presentation/screens/botton_navigation_bar_screen/07-proveedores.dart';
 import 'package:ecomerce_app/src/presentation/screens/botton_navigation_bar_screen/08-toma_de_inventario.dart';
 import 'package:ecomerce_app/src/services/service_company.dart';
 import 'package:ecomerce_app/src/presentation/screens/user/orden_de_compra.dart';
-
 
 class Custon_Cards extends StatefulWidget {
   final Customer customer; 
@@ -28,21 +27,36 @@ class Custon_Cards extends StatefulWidget {
 class _Custon_CardsState extends State<Custon_Cards> {
 
   List<Map<String, dynamic>> recentOrders = [];
-  List<ArticuloItem> _articulosSeleccionados = [];
+  String _companyName = 'Cargando...';
+  final CompanyService _companyService = CompanyService();
+  bool _isLoadingCompany = true;
 
-     @override
+  @override
   void initState() {
     super.initState();
-    // ✅ VERIFICAR QUE EL SERVICIO ESTÉ INICIALIZADO
     _ensureCompanyServiceInitialized();
-  }
-    Future<void> _ensureCompanyServiceInitialized() async {
-    final companyService = CompanyService();
-    if (companyService.odooService == null) {
-      await companyService.initialize();
-    }
+    _loadCompanyName();
   }
 
+  Future<void> _loadCompanyName() async {
+    setState(() {
+      _isLoadingCompany = true;
+    });
+    
+    try {
+      await _companyService.initialize();
+      setState(() {
+        _companyName = _companyService.companyName;
+        _isLoadingCompany = false;
+      });
+    } catch (e) {
+      print('❌ Error cargando nombre de compañía: $e');
+      setState(() {
+        _companyName = 'LMH Outlet'; // Fallback
+        _isLoadingCompany = false;
+      });
+    }
+  } 
 
   void addRecentOrder(String cliente, String ordenId) {
     recentOrders.insert(0, {
@@ -165,7 +179,6 @@ class _Custon_CardsState extends State<Custon_Cards> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildCompanyHeader(),
         
         const SizedBox(height: 10),
         // SECCIÓN VENTAS
@@ -184,40 +197,39 @@ class _Custon_CardsState extends State<Custon_Cards> {
         Row(
           children: [
             buildCard(
-  const Color.fromARGB(255, 88, 63, 128),
-  Icons.people,
-  'Clientes',
-  onTap: () {
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ClientScreen(
-          onCustomerPageNavigate: (customer) {
-            // Manejar la navegación para clientes (personas)
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => OrdenPago(
-                  customer: customer,
-                  onProductListNavigate: (selectedCustomer) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => ProductList(
-                          selectedCustomer: selectedCustomer,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  },
-),
+              const Color.fromARGB(255, 88, 63, 128),
+              Icons.people,
+              'Clientes',
+              onTap: () {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ClientScreen(
+                      onCustomerPageNavigate: (customer) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => OrdenPago(
+                              customer: customer,
+                              onProductListNavigate: (selectedCustomer) {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => ProductList(
+                                      selectedCustomer: selectedCustomer,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                );
+              },
+            ),
             const SizedBox(width: 10),
             buildCard(
               const Color.fromARGB(255, 88, 63, 128),
@@ -238,32 +250,18 @@ class _Custon_CardsState extends State<Custon_Cards> {
             ),
             const SizedBox(width: 10),
             buildCard(
-  const Color.fromARGB(255, 88, 63, 128),
-  Icons.shopping_bag,
-  'Artículos',
-  onTap: () {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ArticuloSelectorScreen(
-          onArticuloAgregado: (articulo, cantidad) {
-            setState(() {
-              // Actualizar tu lista local de artículos seleccionados
-              _articulosSeleccionados.add(articulo);
-            });
-          },
-          onArticuloEliminado: (articulo) {
-            setState(() {
-              // Remover de tu lista local
-              _articulosSeleccionados.removeWhere((item) => item.id == articulo.id);
-            });
-          },
-          articulosSeleccionadosIniciales: _articulosSeleccionados,
-        ),
-      ),
-    );
-  },
-),
+              const Color.fromARGB(255, 88, 63, 128),
+              Icons.shopping_bag,
+              'Artículos',
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ProductosViewScreen(), 
+                  ),
+                );
+              },
+            ),
           ],
         ),
         const SizedBox(height: 15),
@@ -276,6 +274,8 @@ class _Custon_CardsState extends State<Custon_Cards> {
               const Color.fromARGB(255, 88, 63, 128),
               Icons.description,
               'Proformas',
+              disabled: true,
+              showTag: true,
             ),
             const SizedBox(width: 10),
             buildCard(
@@ -297,7 +297,7 @@ class _Custon_CardsState extends State<Custon_Cards> {
         ),
         const SizedBox(height: 20),
 
-        // SECCIÓN GASTOS
+        // SECCIÓN COMPRAS - Primera fila
         const Text(
           'Compras',
           style: TextStyle(
@@ -308,99 +308,95 @@ class _Custon_CardsState extends State<Custon_Cards> {
         ),
         const SizedBox(height: 10),
 
-        // Tercera fila (Gastos)
         Row(
-          children: [
-            buildCard(
-  const Color.fromARGB(255, 88, 63, 128),
-  Icons.shopping_cart_checkout,
-  'Órdenes de compra',
-  onTap: () async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => PurchaseOrdersScreen(
-          purchaseOrders: [], 
-          selectedSupplier: null,
-        ),
-      ),
-    );
-    setState(() {});
-  },
-),
+  children: [
+    buildCard(
+      const Color.fromARGB(255, 88, 63, 128),
+      Icons.business,
+      'Proveedores',
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ProveedoresScreen(
+              onSupplierPageNavigate: (supplier) {
+                // Este callback se usará dentro de ProveedoresScreen
+                // cuando el usuario seleccione un proveedor
+              },
+            ),
+          ),
+        );
+      },
+    ),
             const SizedBox(width: 10),
             buildCard(
               const Color.fromARGB(255, 88, 63, 128),
-              Icons.inventory,
-              'Recepción',
-            ),
-            const SizedBox(width: 10),
-            buildCard(
-              const Color.fromARGB(255, 88, 63, 128),
-              Icons.receipt,
-              'Facturas',
-            ),
-            
-          ],
-        ),
-        const SizedBox(height: 10),
-
-        // Cuarta fila (Pagos)
-        Row(
-          children: [
-            buildCard(
-              const Color.fromARGB(255, 88, 63, 128),
-              Icons.payment,
-              'Pagos',
+              Icons.shopping_cart_checkout,
+              'Órdenes de compra',
+              onTap: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => PurchaseOrdersScreen(
+                      purchaseOrders: [], 
+                      selectedSupplier: null,
+                    ),
+                  ),
+                );
+                setState(() {});
+              },
             ),
             const SizedBox(width: 10),
             buildCard(
               const Color.fromARGB(255, 88, 63, 128),
               Icons.shopping_bag,
               'Artículos',
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ProductosViewScreen(),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+
+        // SECCIÓN COMPRAS - Segunda fila
+        Row(
+          children: [
+            buildCard(
+              const Color.fromARGB(255, 88, 63, 128),
+              Icons.receipt,
+              'Facturas',
+              disabled: true,
+              showTag: true,
             ),
             const SizedBox(width: 10),
             buildCard(
-  const Color.fromARGB(255, 214, 119, 31), // Color diferente para distinguir
-  Icons.business,
-  'Proveedores',
-  onTap: () {
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ProveedoresScreen(
-          onSupplierPageNavigate: (supplier) {
-            // ✅ CORREGIDO: Navegar directamente a crear orden de compra
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => CrearOrdenCompraScreen(
-                  proveedor: supplier,
-                  onOrdenCreada: (orden, proveedor, articulos) {
-                    // Manejar la orden creada exitosamente
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('✅ Orden de compra creada para ${proveedor.name}'),
-                        backgroundColor: Colors.green,
-                      ),
-                    );
-                    // Opcional: Navegar de vuelta
-                    Navigator.pop(context);
-                  },
-                ),
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  },
-),
+              const Color.fromARGB(255, 88, 63, 128),
+              Icons.inventory,
+              'Recepción',
+              disabled: true,
+              showTag: true,
+
+            ),
+            const SizedBox(width: 10),
+            buildCard(
+              const Color.fromARGB(255, 88, 63, 128),
+              Icons.payment,
+              'Pagos',
+              disabled: true,
+              showTag: true,
+
+            ),
           ],
         ),
         const SizedBox(height: 20),
 
-        // SECCIÓN INVENTARIO 
+        // SECCIÓN INVENTARIO - Solo Toma de Inventario
         const Text(
           "Inventario",
           style: TextStyle(
@@ -412,50 +408,52 @@ class _Custon_CardsState extends State<Custon_Cards> {
         const SizedBox(height: 10),
         Row(
           children: [
-           buildCard(
-  const Color.fromARGB(255, 88, 63, 128),
-  Icons.inventory_2,
-  'Toma de inventario',
-  accesoDirecto: true,
-  onTap: () {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => TomaInventarioScreen(),
-      ),
-    );
-  },
-),
-            const SizedBox(width: 10),
             buildCard(
               const Color.fromARGB(255, 88, 63, 128),
-              Icons.history,
-              '',
+              Icons.inventory_2,
+              'Toma de inventario',
               accesoDirecto: true,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => TomaInventarioScreen(),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(width: 10),
+            // Card vacía para mantener el layout
+            Expanded(
+              child: SizedBox(
+                height: 110,
+                child: Container(),
+              ),
+            ),
+            const SizedBox(width: 10),
+            // Card vacía para mantener el layout
+            Expanded(
+              child: SizedBox(
+                height: 110,
+                child: Container(),
+              ),
             ),
           ],
         ),
+        const SizedBox(height: 20),
       ],
     );
   }
-  
+
+  Future<void> _ensureCompanyServiceInitialized() async {
+    final companyService = CompanyService();
+    if (!companyService.isInitialized) {
+      await companyService.initialize();
+    }
+  }
 
 
-    // ✅ HEADER CON INFORMACIÓN DE EMPRESA
-  Widget _buildCompanyHeader() {
-      final companyService = CompanyService();
 
-
-     return Card(
-    elevation: 2,
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(12),
-    ),
-
-  );
-}
-
-   //Widget para mostrar información del cliente
   Widget _buildCustomerInfo() {
     return Card(
       elevation: 3,
@@ -541,7 +539,6 @@ class _Custon_CardsState extends State<Custon_Cards> {
                 IconButton(
                   icon: const Icon(Icons.shopping_cart, color: Colors.deepPurple, size: 28),
                   onPressed: () {
-                    // Crear orden rápida para este cliente
                     Navigator.push(
                       context,
                       MaterialPageRoute(
@@ -593,5 +590,4 @@ class _Custon_CardsState extends State<Custon_Cards> {
       ),
     );
   }
-
 }

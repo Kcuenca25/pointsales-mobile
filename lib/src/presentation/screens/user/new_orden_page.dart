@@ -2,32 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:ecomerce_app/src/presentation/screens/user/orden_de_page.dart';
 import 'package:ecomerce_app/src/domain/models/users_model.dart';
 import 'package:ecomerce_app/src/domain/models/articulo.dart';
-import 'package:ecomerce_app/src/presentation/screens/botton_navigation_bar_screen/02-client_screen.dart';
 import 'package:ecomerce_app/src/presentation/screens/user/orden_incompleta.dart'; 
-//import 'package:ecomerce_app/src/presentation/components/custon_select/articulo_select.dart';
-//import 'package:ecomerce_app/src/presentation/components/custon_select/articulo_select_grid.dart';
 import 'package:ecomerce_app/src/presentation/components/custon_appbar/appDrawer.dart';
-//import 'package:ecomerce_app/src/presentation/components/custon_appbar/custon_appbar.dart';
 import 'package:ecomerce_app/src/presentation/screens/user/home_screen.dart';
-import 'package:ecomerce_app/src/presentation/components/botton_navigation_bar/circle_navbar.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
-//import 'package:ecomerce_app/src/presentation/components/custon_select/articuloSelectSimple.dart';
 import 'package:ecomerce_app/src/domain/models/products_model.dart';
 import 'package:ecomerce_app/src/domain/models/customer_model.dart';
+import 'package:ecomerce_app/src/domain/models/draft_order.dart';
 import 'package:ecomerce_app/src/presentation/screens/user/articuloSelectorCompleto.dart';
-import 'package:flutter/animation.dart';
 import 'package:ecomerce_app/src/data/api_repository/odoo_product_service.dart';
 import 'package:ecomerce_app/src/data/api_repository/odooOrderService.dart';
-
 import 'package:ecomerce_app/src/data/api_repository/odoo_service_enhanced.dart';
-import 'dart:math';
-
-//import 'package:ecomerce_app/src/domain/models/articulo.dart'; 
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:ecomerce_app/src/services/connectivity_service.dart';
 import 'package:ecomerce_app/src/services/cache_service.dart';
-
 import 'package:ecomerce_app/src/services/offline_order_service.dart';
+import 'package:ecomerce_app/src/services/draft_order_service.dart';
+import 'package:ecomerce_app/src/config/api_config.dart';
 
 class NuevaOrdenPage extends StatefulWidget {
   final Customer customer; 
@@ -64,21 +54,25 @@ class _NuevaOrdenPageState extends State<NuevaOrdenPage>   with SingleTickerProv
   bool _clienteBloqueado = false;
   bool _isProcessingScan = false;
   bool _mostrarScanner = false;
+  bool _ordenGuardadaExitosamente = false; // ✅ NUEVA BANDERA
   
   //variables de animacion 
   late AnimationController _animationController;
   late Animation<Offset> _offsetAnimation;
-
+  late OdooProductService _productService;
+  late OdooServiceEnhanced _odooService;
   List<ArticuloItem> _articulos = [];
+  ArticuloItem? _currentArticulo;
 
   @override
   void initState() {
     super.initState();
-
+    _initializeServices(); 
+    _cargarBorrador();
     _clienteBloqueado = true; 
     _selectedCustomer = widget.customer;
     _cargarProductos();
-
+    
     _animationController = AnimationController(
     vsync: this,
     duration: const Duration(seconds: 8), // Más lento
@@ -91,6 +85,10 @@ class _NuevaOrdenPageState extends State<NuevaOrdenPage>   with SingleTickerProv
     parent: _animationController,
     curve: Curves.easeInOut,
   ));
+  if (_currentArticulo != null) {
+  // Usar _currentArticulo!
+  print(_currentArticulo!.nombre);
+}
   
 
       // LIMPIAR BORRADOR SI VIENE DESDE ORDEN DE COMPRA (sin usuario)
@@ -110,45 +108,170 @@ class _NuevaOrdenPageState extends State<NuevaOrdenPage>   with SingleTickerProv
       _actualizarTotal();
     }
   }
-  ArticuloItem? _buscarProductoPorCodigoQR(String codigoQR) {
-  print('🔍 Buscando producto con código: $codigoQR');
-  
-  // Buscar en la lista de productos disponibles de Odoo por default_code
-  final product = _productosDisponibles.firstWhere(
-    (p) => p.defaultCode == codigoQR,
-    orElse: () => Product(
-      id: -1,
-      name: '',
-      defaultCode: '',
-      listPrice: 0.0,
-      type: 'consu',
-    ),
+void _initializeServices() {
+  // Inicializa el servicio de Odoo para ventas
+  _odooService = OdooServiceEnhanced(
+    baseUrl: ApiConfig.baseUrl, 
+    dbName: ApiConfig.dbName,
   );
-
-  // Si no se encontró el producto
-  if (product.id == -1) {
-    print('❌ Producto no encontrado para código: $codigoQR');
-    return null;
+  
+  _productService = OdooProductService(_odooService);
+}
+Future<void> _cargarBorrador() async {
+  try {
+    await DraftOrderService.instance.init();
+    
+    // ✅ USAR EL MÉTODO ASYNC Y ESPERAR CON AWAIT
+    final drafts = await DraftOrderService.instance.getAllDrafts();
+    
+    if (drafts.isEmpty) return;
+    
+    // Buscar borrador para este cliente
+    final draftForCustomer = drafts
+        .where((draft) => draft.type == OrderType.venta && 
+                         draft.customer?.id == widget.customer.id)
+        .firstOrNull;
+    
+    // ✅ VERIFICACIÓN COMPLETA
+    if (draftForCustomer != null && draftForCustomer.articulos.isNotEmpty) {
+      setState(() {
+        _articulos = List<ArticuloItem>.from(draftForCustomer.articulos);
+        _actualizarTotal();
+      });
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('✅ Borrador cargado para ${widget.customer.name}'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  } catch (e) {
+    print('❌ Error cargando borrador: $e');
   }
-
-  print('✅ Producto encontrado: ${product.name} (ID: ${product.id})');
-  
-  // Convertir el Product de Odoo a ArticuloItem
-  return ArticuloItem(
-    id: product.id,
-    nombre: product.name,
-    categoria: product.categoryName ?? 'Sin categoría',
-    subcategoria: product.typeDisplay,
-    precio: product.listPrice,
-    descripcion: product.description ?? product.name,
-    cantidad: 1,
-    imagen: 'default_product',
-    rating: 4.0,
-    reviews: 0,
-  );
 }
 
-// ✅ Método mejorado para manejar el escaneo
+// ✅ CORREGIDO: Cambiar el tipo de retorno
+Future<ArticuloItem?> _buscarProductoPorCodigoQR(String codigoQR) async {
+  print('🔍 Buscando producto con código: $codigoQR');
+  
+  try {
+    // ✅ PRIMERO BUSCAR EN ODDO EN TIEMPO REAL
+    await _odooService.login(ApiConfig.defaultUsername, ApiConfig.defaultPassword);
+    final product = await _productService.getProductByBarcode(codigoQR);
+    
+    if (product == null) {
+      // ✅ SI NO SE ENCUENTRA POR BARCODE, BUSCAR POR DEFAULT_CODE
+      final products = await _productService.searchProducts(codigoQR, limit: 1);
+      if (products.isNotEmpty) {
+        final foundProduct = products.first;
+        
+        final precioConImpuesto = _getPrecioConImpuestoVentas(foundProduct);
+        final tieneImpuestos = _tieneImpuestosVentas(foundProduct);
+        
+        print('✅ Producto encontrado por default_code: ${foundProduct.name}');
+        
+        return ArticuloItem(
+          id: foundProduct.id,
+          nombre: foundProduct.name,
+          categoria: foundProduct.categoryName ?? 'Sin categoría',
+          subcategoria: foundProduct.typeDisplay,
+          precio: precioConImpuesto,
+          descripcion: foundProduct.description ?? foundProduct.name,
+          cantidad: 1,
+          imagen: 'default_product',
+          rating: 4.0,
+          reviews: 0,
+          tieneImpuestos: tieneImpuestos,
+        );
+      }
+      
+      print('❌ Producto no encontrado para código: $codigoQR');
+      return null;
+    }
+    
+    // ✅ PRODUCTO ENCONTRADO POR BARCODE
+    print('✅ Producto encontrado por barcode: ${product.name}');
+    
+    final precioConImpuesto = _getPrecioConImpuestoVentas(product);
+    final tieneImpuestos = _tieneImpuestosVentas(product);
+    
+    return ArticuloItem(
+      id: product.id,
+      nombre: product.name,
+      categoria: product.categoryName ?? 'Sin categoría',
+      subcategoria: product.typeDisplay,
+      precio: precioConImpuesto,
+      descripcion: product.description ?? product.name,
+      cantidad: 1,
+      imagen: 'default_product',
+      rating: 4.0,
+      reviews: 0,
+      tieneImpuestos: tieneImpuestos,
+    );
+    
+  } catch (e) {
+    print('❌ Error buscando producto: $e');
+    
+    // ✅ FALLBACK: BUSCAR EN PRODUCTOS DISPONIBLES
+    final product = _productosDisponibles.firstWhere(
+      (p) => p.barcode == codigoQR || p.defaultCode == codigoQR,
+      orElse: () => Product(
+        id: -1,
+        name: '',
+        defaultCode: '',
+        listPrice: 0.0,
+        type: 'consu',
+      ),
+    );
+
+    if (product.id == -1) {
+      return null;
+    }
+
+    final precioConImpuesto = _getPrecioConImpuestoVentas(product);
+    final tieneImpuestos = _tieneImpuestosVentas(product);
+    
+    return ArticuloItem(
+      id: product.id,
+      nombre: product.name,
+      categoria: product.categoryName ?? 'Sin categoría',
+      subcategoria: product.typeDisplay,
+      precio: precioConImpuesto,
+      descripcion: product.description ?? product.name,
+      cantidad: 1,
+      imagen: 'default_product',
+      rating: 4.0,
+      reviews: 0,
+      tieneImpuestos: tieneImpuestos,
+    );
+  }
+}
+// ✅ AGREGAR ESTA FUNCIÓN EN NuevaOrdenPage
+double _getPrecioConImpuestoVentas(Product product) {
+  final tieneImpuestos = product.taxesIds != null && product.taxesIds!.isNotEmpty;
+  
+  print('🔍 _getPrecioConImpuestoVentas para: ${product.name}');
+  print('   Precio base: \$${product.listPrice}');
+  print('   Tiene impuestos: $tieneImpuestos');
+  
+  if (tieneImpuestos) {
+    final precioConImpuesto = product.listPrice;
+    print('   ✅ ITBIS ya incluido en BD: \$${precioConImpuesto.toStringAsFixed(2)}');
+    return precioConImpuesto;
+  }
+  
+  print('   ⚠️ Sin impuestos: \$${product.listPrice}');
+  return product.listPrice;
+}
+
+// ✅ También agrega esta función auxiliar
+bool _tieneImpuestosVentas(Product product) {
+  return product.taxesIds != null && product.taxesIds!.isNotEmpty;
+}
+
+
+
 void _handleScan(BarcodeCapture capture) async {
   if (_isProcessingScan || capture.barcodes.isEmpty) return;
   
@@ -158,90 +281,111 @@ void _handleScan(BarcodeCapture capture) async {
   _isProcessingScan = true;
   
   try {
-    // ✅ PRIMERO BUSCAR EN TIEMPO REAL EN ODDO
-    final odooService = OdooServiceEnhanced(
-      baseUrl: 'https://solutions.tailorw.net',
-      dbName: 'pointsales_prodv18',
-    );
+    print('🔍 Código escaneado en VENTAS: $code');
     
-    await odooService.login('admin', 'admin');
-    final productService = OdooProductService(odooService);
+    // ✅ USAR EL SERVICIO LOCAL INICIALIZADO
+    await _odooService.login(ApiConfig.defaultUsername, ApiConfig.defaultPassword);
     
-    final Product? productRealTime = await productService.getProductByBarcode(code);
+    // ✅ BUSCAR EN TIEMPO REAL EN ODDO
+    Product? productRealTime = await _productService.getProductByBarcode(code);
     
     if (productRealTime != null) {
-      print('✅ Producto actualizado desde Odoo: ${productRealTime.name} - \$${productRealTime.listPrice}');
+      // ✅ OBTENER DETALLES COMPLETOS
+      final productDetails = await _productService.getProductDetails(productRealTime.id);
+      
+      if (productDetails != null) {
+        productRealTime = productDetails;
+      }
+      
+      print('🔍 Producto escaneado en VENTAS: ${productRealTime.name}');
+      
+      // ✅ USAR LA FUNCIÓN _getPrecioConImpuestoVentas
+      final precioConImpuesto = _getPrecioConImpuestoVentas(productRealTime);
+      final tieneImpuestos = _tieneImpuestosVentas(productRealTime);
       
       final articuloActualizado = ArticuloItem(
         id: productRealTime.id,
         nombre: productRealTime.name,
         categoria: productRealTime.categoryName ?? 'Sin categoría',
         subcategoria: productRealTime.typeDisplay,
-        precio: productRealTime.listPrice,
+        precio: precioConImpuesto,
         descripcion: productRealTime.description ?? productRealTime.name,
         cantidad: 1,
+        tieneImpuestos: tieneImpuestos,
       );
+      
+      print('💰 Articulo creado:');
+      print('   Precio final: \$${articuloActualizado.precio.toStringAsFixed(2)}');
+      print('   Tiene impuestos: ${articuloActualizado.tieneImpuestos}');
       
       _mostrarDetalleProductoEscaneado(articuloActualizado);
     } else {
-      // ✅ Fallback a búsqueda local
-      final productoCached = _productosDisponibles.firstWhere(
-        (p) => p.barcode == code || p.defaultCode == code,
-        orElse: () => Product(
-          id: -1,
-          name: '',
-          listPrice: 0.0,
-          type: 'consu',
-        ),
-      );
+      // ✅ FALLBACK a búsqueda local
+      print('⚠️ No encontrado por barcode, buscando por default_code...');
+      final products = await _productService.searchProducts(code, limit: 1);
       
-      if (productoCached.id != -1) {
+      if (products.isNotEmpty) {
+        final product = products.first;
+        final precioConImpuesto = _getPrecioConImpuestoVentas(product);
+        final tieneImpuestos = _tieneImpuestosVentas(product);
+        
         final articulo = ArticuloItem(
-          id: productoCached.id,
-          nombre: productoCached.name,
-          categoria: productoCached.categoryName ?? 'Sin categoría',
-          subcategoria: productoCached.typeDisplay,
-          precio: productoCached.listPrice,
-          descripcion: productoCached.description ?? productoCached.name,
+          id: product.id,
+          nombre: product.name,
+          categoria: product.categoryName ?? 'Sin categoría',
+          subcategoria: product.typeDisplay,
+          precio: precioConImpuesto,
+          descripcion: product.description ?? product.name,
           cantidad: 1,
+          tieneImpuestos: tieneImpuestos,
         );
+        
+        print('💰 Articulo desde búsqueda:');
+        print('   Precio final: \$${articulo.precio.toStringAsFixed(2)}');
+        
         _mostrarDetalleProductoEscaneado(articulo);
       } else {
-        _mostrarMensajeError('Producto no encontrado con código: $code');
+        // ✅ ÚLTIMO FALLBACK: buscar en productos disponibles en caché
+        final productoCached = _productosDisponibles.firstWhere(
+          (p) => p.barcode == code || p.defaultCode == code,
+          orElse: () => Product(
+            id: -1,
+            name: '',
+            listPrice: 0.0,
+            type: 'consu',
+          ),
+        );
+        
+        if (productoCached.id != -1) {
+          final precioConImpuesto = _getPrecioConImpuestoVentas(productoCached);
+          final tieneImpuestos = _tieneImpuestosVentas(productoCached);
+          
+          final articulo = ArticuloItem(
+            id: productoCached.id,
+            nombre: productoCached.name,
+            categoria: productoCached.categoryName ?? 'Sin categoría',
+            subcategoria: productoCached.typeDisplay,
+            precio: precioConImpuesto,
+            descripcion: productoCached.description ?? productoCached.name,
+            cantidad: 1,
+            tieneImpuestos: tieneImpuestos,
+          );
+          
+          _mostrarDetalleProductoEscaneado(articulo);
+        } else {
+          _mostrarMensajeError('❌ Producto no encontrado con código: $code');
+        }
       }
     }
   } catch (e) {
-    print('❌ Error en escaneo: $e');
-    // Fallback a búsqueda local
-    final productoCached = _productosDisponibles.firstWhere(
-      (p) => p.barcode == code || p.defaultCode == code,
-      orElse: () => Product(
-        id: -1,
-        name: '',
-        listPrice: 0.0,
-        type: 'consu',
-      ),
-    );
-    
-    if (productoCached.id != -1) {
-      final articulo = ArticuloItem(
-        id: productoCached.id,
-        nombre: productoCached.name,
-        categoria: productoCached.categoryName ?? 'Sin categoría',
-        subcategoria: productoCached.typeDisplay,
-        precio: productoCached.listPrice,
-        descripcion: productoCached.description ?? productoCached.name,
-        cantidad: 1,
-      );
-      _mostrarDetalleProductoEscaneado(articulo);
-    } else {
-      _mostrarMensajeError('Producto no encontrado');
-    }
+    print('❌ Error en escaneo VENTAS: $e');
+    _mostrarMensajeError('Error al escanear: $e');
   } finally {
     _isProcessingScan = false;
     setState(() => _mostrarScanner = false);
   }
 }
+
 
 // ✅ Método auxiliar para mostrar mensajes de error
 void _mostrarMensajeError(String mensaje) {
@@ -254,7 +398,8 @@ void _mostrarMensajeError(String mensaje) {
   );
 }
 
-// ✅ Método mejorado para mostrar detalle del producto escaneado
+
+
 void _mostrarDetalleProductoEscaneado(ArticuloItem producto) {
   final cantidadExistente = _articulos
       .where((a) => a.id == producto.id)
@@ -273,16 +418,18 @@ void _mostrarDetalleProductoEscaneado(ArticuloItem producto) {
     ),
   );
 
+  // ✅ PASAR EL PRODUCTO ACTUALIZADO CON LOS IMPUESTOS APLICADOS
   Navigator.push(
     context,
     MaterialPageRoute(
       builder: (context) => ProductDetailScreen(
-        articulo: producto,
+        articulo: producto, // ✅ ESTE YA TIENE EL PRECIO CON IMPUESTOS
         product: product,
         cantidadInicial: cantidadExistente,
         onAgregarArticulo: (articulo, cantidad) {
           _agregarArticulo(articulo, cantidad);
         },
+        esParaVenta: true,
       ),
     ),
   );
@@ -290,39 +437,32 @@ void _mostrarDetalleProductoEscaneado(ArticuloItem producto) {
 
 Future<void> _cargarProductos() async {
   try {
-    final odooService = OdooServiceEnhanced(
-      baseUrl: 'https://pointsalesqa.tailorw.net',
-      dbName: 'pointsales_prodv18',
-    );
+    // ✅ USAR EL SERVICIO LOCAL INICIALIZADO
+    await _odooService.login(ApiConfig.defaultUsername, ApiConfig.defaultPassword);
     
-    bool isAuthenticated = await odooService.login('admin', 'admin');
+    // ✅ VERIFICAR SI DEBE ACTUALIZARSE
+    final shouldRefresh = await CacheService.shouldRefreshProducts();
+    List<Product> products;
     
-    if (isAuthenticated) {
-      final productService = OdooProductService(odooService);
+    if (shouldRefresh) {
+      print('🔄 Actualizando productos (cache expirado)...');
+      products = await _productService.getProducts(limit: 200);
+    } else {
+      print('📦 Usando productos en caché...');
+      products = await CacheService.getCachedProducts();
       
-      // ✅ VERIFICAR SI DEBE ACTUALIZARSE
-      final shouldRefresh = await CacheService.shouldRefreshProducts();
-      List<Product> products;
-      
-      if (shouldRefresh) {
-        print('🔄 Actualizando productos (cache expirado)...');
-        products = await productService.getProducts(limit: 200);
-      } else {
-        print('📦 Usando productos en caché...');
-        products = await CacheService.getCachedProducts();
-        
-        // ✅ SI CACHÉ ESTÁ VACÍO, CARGAR DE TODOS MODOS
-        if (products.isEmpty) {
-          products = await productService.getProducts(limit: 200);
-        }
+      // ✅ SI CACHÉ ESTÁ VACÍO, CARGAR DE TODOS MODOS
+      if (products.isEmpty) {
+        products = await _productService.getProducts(limit: 200);
       }
-      
-      setState(() {
-        _productosDisponibles = products;
-      });
-      
-      print('✅ Productos cargados: ${products.length}');
     }
+    
+    setState(() {
+      _productosDisponibles = products;
+    });
+    
+    print('✅ Productos cargados para ventas: ${products.length}');
+    
   } catch (e) {
     print('❌ Error cargando productos: $e');
     // Fallback a caché
@@ -338,6 +478,12 @@ Future<void> _cargarProductos() async {
     _animationController.dispose();
     _totalController.dispose();
     _scannerController.dispose();
+     // ✅ SOLO guardar borrador si la orden NO fue guardada exitosamente
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (_articulos.isNotEmpty && !_ordenGuardadaExitosamente) {
+      _guardarBorrador();
+    }
+  });
     super.dispose();
   }
 
@@ -488,6 +634,7 @@ Future<void> _cargarProductos() async {
     }
     _actualizarTotal();
     _guardarDraft();
+     _guardarBorrador(); 
   });
 }
 
@@ -496,8 +643,58 @@ Future<void> _cargarProductos() async {
       _articulos.removeAt(index);
       _actualizarTotal();
       _guardarDraft();
+        _guardarBorrador();
     });
   }
+Future<void> _guardarBorrador() async {
+  // ✅ NO GUARDAR si la orden ya fue guardada exitosamente
+  if (_ordenGuardadaExitosamente) {
+    return;
+  }
+  
+  if (_articulos.isEmpty) {
+    // Si no hay artículos, eliminar cualquier borrador existente
+    final draftId = 'venta_${widget.customer.id}';
+    await DraftOrderService.instance.deleteDraft(draftId);
+    return;
+  }
+  
+  // ✅ Asegurarse de que total está calculado
+  final total = _calculateTotal();
+  
+  final draft = DraftOrder(
+    id: 'venta_${widget.customer.id}',
+    type: OrderType.venta,
+    createdAt: DateTime.now(),
+    customer: widget.customer,
+    articulos: List<ArticuloItem>.from(_articulos),
+    total: total,
+  );
+  
+  await DraftOrderService.instance.saveDraft(draft);
+  print('💾 Borrador guardado para ${widget.customer.name}');
+}
+
+double _calculateTotal() {
+  return _articulos.fold(0.0, (sum, articulo) {
+    return sum + (articulo.precio * articulo.cantidad);
+  });
+}
+
+// ✅ AL CERRAR LA ORDEN (crear orden completa)
+void _crearOrden() async {
+  try {
+    // ... código para crear orden ...
+    
+    // ✅ ELIMINAR BORRADOR DESPUÉS DE CREAR LA ORDEN
+    final draftId = 'venta_${widget.customer.id}';
+    await DraftOrderService.instance.deleteDraft(draftId);
+    
+  } catch (e) {
+    // ... manejo de error ...
+  }
+}
+
 
   void _actualizarCantidad(int index, int nuevaCantidad) {
   setState(() {
@@ -508,9 +705,11 @@ Future<void> _cargarProductos() async {
       _articulos[index].cantidad = nuevaCantidad;
       _actualizarTotal();
       _guardarDraft();
+       _guardarBorrador(); 
     }
   });
 }
+
 
   void _actualizarTotal() {
     double total = 0;
@@ -540,6 +739,7 @@ Future<void> _cargarProductos() async {
       );
     }
   }
+  
 
   void _mostrarSelectorArticulosCompleto() {
   Navigator.push(
@@ -731,14 +931,26 @@ void _mostrarDialogoSinConexion() {
 }
 
 //  MÉTODO PARA GUARDAR ONLINE (CORREGIDO)
+// En el método _guardarOrdenOnline(), verificar si el cliente existe
 Future<void> _guardarOrdenOnline() async {
   if (_articulos.isEmpty) {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Agregue al menos un artículo")));
+      const SnackBar(content: Text("Agregue al menos un artículo"))
+    );
     return;
   }
   
-  // CALCULAR TOTAL - Esto faltaba
+  // ✅ VERIFICAR QUE EL CLIENTE EXISTE
+  if (_selectedCustomer == null || _selectedCustomer!.id == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("❌ Error: Cliente no válido"),
+        backgroundColor: Colors.red,
+      ),
+    );
+    return;
+  }
+  
   double totalPagar = _articulos.fold(0, (sum, articulo) => sum + (articulo.precio * articulo.cantidad));
   
   // MOSTRAR LOADING
@@ -751,7 +963,46 @@ Future<void> _guardarOrdenOnline() async {
   );
 
   try {
-    // 1. PREPARAR DATOS PARA ODDO
+    // 1. VERIFICAR QUE EL CLIENTE EXISTE EN ODDO
+    final odooService = OdooServiceEnhanced(
+      baseUrl: ApiConfig.baseUrl,
+      dbName: 'pointsales-v18',
+    );
+    
+    await odooService.login(ApiConfig.defaultUsername, ApiConfig.defaultPassword);
+    
+    // Verificar si el cliente existe
+    try {
+      final clienteExiste = await odooService.callKw({
+        'service': 'object',
+        'method': 'execute_kw',
+        'args': [
+          odooService.dbName,
+          odooService.uid,
+          odooService.password,
+          'res.partner',
+          'search_count',
+          [
+            [['id', '=', _selectedCustomer!.id!]]
+          ]
+        ],
+      });
+      
+      if (clienteExiste == 0) {
+        throw Exception('Cliente ID ${_selectedCustomer!.id} no existe en Odoo');
+      }
+    } catch (e) {
+      Navigator.pop(context); // Cerrar loading
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Error: Cliente no existe en el sistema: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    
+    // 2. PREPARAR DATOS PARA ODDO
     final orderLines = _articulos.map((articulo) {
       return {
         'product_id': articulo.id,
@@ -760,13 +1011,7 @@ Future<void> _guardarOrdenOnline() async {
       };
     }).toList();
 
-    // 2. CREAR ORDEN EN ODDO CON FLUJO AUTOMÁTICO
-    final odooService = OdooServiceEnhanced(
-      baseUrl: 'https://pointsalesqa.tailorw.net',
-      dbName: 'pointsales_prodv18',
-    );
-    
-    await odooService.login('admin', 'admin');
+    // 3. CREAR ORDEN EN ODDO
     final orderService = OdooOrderService(odooService);
     
     final result = await orderService.createSaleOrder(
@@ -774,27 +1019,37 @@ Future<void> _guardarOrdenOnline() async {
       orderLines: orderLines,
     );
 
-    // 3. CERRAR LOADING
+    // 4. CERRAR LOADING
     Navigator.pop(context);
 
     if (result['success'] == true) {
       print('🎉 Orden creada exitosamente en Odoo - ID: ${result['order_id']}');
       
-      // 4. CREAR ORDEN LOCAL PARA LA APP
+      // 5. CREAR ORDEN LOCAL PARA LA APP
       final nuevaOrden = Order(
         id: result['order_id'].toString(),
         date: DateTime.now(),
-        total: totalPagar, // ✅ AHORA totalPagar ESTÁ DEFINIDO
-        status: 'draft',
+        total: totalPagar,
+        status: 'sale', // ✅ CAMBIADO: Marcar como confirmada, no como borrador
       );
 
-      // 5. NOTIFICAR Y CERRAR
+      // 6. ELIMINAR BORRADOR DESPUÉS DE CREAR LA ORDEN
+      final draftId = 'venta_${widget.customer.id}';
+      await DraftOrderService.instance.deleteDraft(draftId);
+      
+      // 7. MARCAR COMO EXITOSA PARA NO VOLVER A GUARDAR BORRADOR
+      setState(() {
+        _ordenGuardadaExitosamente = true;
+      });
+      
+      // 8. NOTIFICAR Y CERRAR
       widget.onOrdenCreada(nuevaOrden, _selectedCustomer!, _articulos);
       _limpiarDraft();
       
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("✅ Orden creada - Flujo automático iniciado"),
+          content: Text("✅ Orden creada exitosamente"),
+          backgroundColor: Colors.green,
           duration: Duration(seconds: 3),
         ),
       );
@@ -851,6 +1106,11 @@ Future<void> _guardarOrdenOffline() async {
       orderLines: orderLines,
       total: totalPagar,
     );
+
+    // ✅ MARCAR COMO EXITOSA PARA NO VOLVER A GUARDAR BORRADOR
+    setState(() {
+      _ordenGuardadaExitosamente = true;
+    });
 
     // Mostrar mensaje de éxito
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1104,41 +1364,43 @@ Widget _buildBottomStaticSection() {
           ],
         ),
         
-        bottomNavigationBar: CustomCircleNavBar(
-          selectedIndex: _selectedIndex, 
-          onItemTapped: _onItemTapped
-        ),
+        
       ),
     );
   }
 
   // Método para desbloquear cliente (descomenta este método)
-  void _desbloquearCliente() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Cambiar cliente'),
-        content: const Text('¿Estás seguro de que quieres cambiar de cliente? Se perderán los artículos seleccionados.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () {
-              setState(() {
-                _selectedUser = null;
-                _clienteBloqueado = false;
-                _articulos.clear();
-                _actualizarTotal();
-              });
-              _limpiarDraft();
-              Navigator.pop(context);
-            },
-            child: const Text('Cambiar', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-  }
+void _desbloquearCliente() {
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Cambiar cliente'),
+      content: const Text('¿Estás seguro de que quieres cambiar de cliente? Se perderán los artículos seleccionados.'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        TextButton(
+          onPressed: () async {
+            // ✅ ELIMINAR BORRADOR DEL CLIENTE ACTUAL
+            final draftId = 'venta_${widget.customer.id}';
+            await DraftOrderService.instance.deleteDraft(draftId);
+            
+            setState(() {
+              _selectedUser = null;
+              _clienteBloqueado = false;
+              _articulos.clear();
+              _actualizarTotal();
+            });
+            _limpiarDraft();
+            Navigator.pop(context);
+          },
+          child: const Text('Cambiar', style: TextStyle(color: Colors.red)),
+        ),
+      ],
+    ),
+  );
+}
+  // ✅ AL SALIR DE LA PANTALLA
 }

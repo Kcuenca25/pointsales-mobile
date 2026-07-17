@@ -1,6 +1,9 @@
 // lib/src/domain/models/customer_model.dart
 import 'dart:convert';
 
+// lib/src/domain/models/customer_model.dart
+import 'dart:convert';
+
 class Customer {
   final int id;
   final String name;
@@ -15,6 +18,8 @@ class Customer {
   final String? vat;
   final String? companyType;
   final bool isCompany;
+  final int? supplierRank; 
+  final int? customerRank;
   final List<dynamic>? countryId;
 
   Customer({
@@ -31,6 +36,8 @@ class Customer {
     this.vat,
     this.companyType,
     this.isCompany = false,
+    this.supplierRank, 
+    this.customerRank,
     this.countryId,
   });
 
@@ -52,7 +59,8 @@ class Customer {
       countryId: map['country_id'],
     );
   }
-   static String? _parsePhone(dynamic value) {
+
+  static String? _parsePhone(dynamic value) {
     if (value == null || value == false) return null;
     return value.toString();
   }
@@ -61,7 +69,6 @@ class Customer {
     if (value == null || value == false) return null;
     return value.toString();
   }
-
 
   // ✅ Para base de datos local (si es necesario)
   Map<String, dynamic> toMap() {
@@ -100,8 +107,48 @@ class Customer {
     );
   }
 
-  String toJson() => json.encode(toMap());
+  // ✅ Método toJson que retorna un Map (compatible con Hive)
+  Map<String, dynamic> toJson() {
+    return toMap();
+  }
+
+  // ✅ Dos constructores fromJson: uno para String y otro para Map
   factory Customer.fromJson(String source) => Customer.fromMap(json.decode(source));
+  
+  // ✅ Constructor fromJson que acepta Map (necesario para Hive/DraftOrder)
+  factory Customer.fromJsonMap(Map<String, dynamic> json) {
+    return Customer(
+      id: json['id'] is int ? json['id'] : int.tryParse(json['id'].toString()) ?? 0,
+      name: json['name']?.toString() ?? '',
+      email: json['email']?.toString(),
+      phone: json['phone']?.toString(),
+      mobile: json['mobile']?.toString(),
+      street: json['street']?.toString(),
+      city: json['city']?.toString(),
+      zip: json['zip']?.toString(),
+      country: json['country'] != null 
+          ? (json['country'] as List<dynamic>?) 
+          : null,
+      commercialCompanyName: json['commercial_company_name']?.toString() ?? 
+                           json['commercialCompanyName']?.toString(),
+      vat: json['vat']?.toString(),
+      companyType: json['company_type']?.toString() ?? 
+                  json['companyType']?.toString(),
+      isCompany: json['is_company'] == true || 
+                json['is_company'] == 1 || 
+                json['isCompany'] == true ||
+                json['isCompany'] == 1,
+      supplierRank: json['supplier_rank']?.toInt() ?? 
+                   json['supplierRank']?.toInt(),
+      customerRank: json['customer_rank']?.toInt() ?? 
+                   json['customerRank']?.toInt(),
+      countryId: json['country_id'] != null 
+          ? (json['country_id'] as List<dynamic>?) 
+          : (json['countryId'] != null 
+              ? (json['countryId'] as List<dynamic>?) 
+              : null),
+    );
+  }
 
   // ✅ Métodos útiles
   String get displayName {
@@ -122,15 +169,15 @@ class Customer {
   String get typeDescription => isCompany ? 'Empresa' : 'Persona';
 
   // ✅ Para búsqueda
- bool matchesQuery(String query) {
-  final searchTerm = query.toLowerCase();
-  return name.toLowerCase().contains(searchTerm) ||
-      (email?.toLowerCase().contains(searchTerm) ?? false) ||
-      (phone?.toLowerCase().contains(searchTerm) ?? false) ||
-      (mobile?.toLowerCase().contains(searchTerm) ?? false) ||
-      (commercialCompanyName?.toLowerCase().contains(searchTerm) ?? false) ||
-      (city?.toLowerCase().contains(searchTerm) ?? false);
-}
+  bool matchesQuery(String query) {
+    final searchTerm = query.toLowerCase();
+    return name.toLowerCase().contains(searchTerm) ||
+        (email?.toLowerCase().contains(searchTerm) ?? false) ||
+        (phone?.toLowerCase().contains(searchTerm) ?? false) ||
+        (mobile?.toLowerCase().contains(searchTerm) ?? false) ||
+        (commercialCompanyName?.toLowerCase().contains(searchTerm) ?? false) ||
+        (city?.toLowerCase().contains(searchTerm) ?? false);
+  }
 
   @override
   bool operator ==(Object other) =>

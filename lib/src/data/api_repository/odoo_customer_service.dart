@@ -23,7 +23,7 @@ class OdooCustomerService {
           [], // Dominio vacío para traer todos
           {
             'fields': [
-              "id", "name", "commercial_company_name", "vat", "company_type",
+              "id", "name", "vat", "company_type",
               "email", "phone", "mobile", "street", "city", "zip", "country_id", "is_company"
             ],
             'limit': limit,
@@ -32,7 +32,7 @@ class OdooCustomerService {
         ],
       });
 
-      print('✅ Respuesta cruda de Odoo: $result');
+      // print('✅ Respuesta cruda de Odoo: $result');
       
       if (result is List) {
         print('📋 Número de clientes: ${result.length}');
@@ -53,12 +53,12 @@ class OdooCustomerService {
     
     for (var item in rawData) {
       try {
-        print('🔍 Procesando item: $item');
+        // print('🔍 Procesando item: $item');
         
         final customer = Customer(
           id: _parseInt(item['id']),
           name: _parseString(item['name']) ?? 'Sin nombre', // ✅ PROPORCIONAR VALOR POR DEFECTO
-          commercialCompanyName: _parseString(item['commercial_company_name']),
+          commercialCompanyName: null, // _parseString(item['commercial_company_name']), // REMOVIDO PARA EVITAR ERRORES
           vat: _parseString(item['vat']),
           companyType: _parseString(item['company_type']) ?? 'person', // ✅ VALOR POR DEFECTO
           email: _parseString(item['email']),
@@ -72,10 +72,10 @@ class OdooCustomerService {
         );
         
         customers.add(customer);
-        print('✅ Cliente procesado: ${customer.name}');
+        // print('✅ Cliente procesado: ${customer.name}');
         
       } catch (e) {
-        print('❌ Error procesando cliente: $e - Item: $item');
+        print('❌ Error procesando cliente: $e'); // Menos detalle en producción/release pero útil en debug sin el item gigante
       }
     }
     

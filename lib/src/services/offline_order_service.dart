@@ -1,7 +1,10 @@
 import 'package:hive/hive.dart';
 import 'package:ecomerce_app/src/services/connectivity_service.dart';
 import 'package:ecomerce_app/src/data/api_repository/odoo_service_enhanced.dart';
-import 'package:ecomerce_app/src/data/api_repository/odooOrderService.dart';class OfflineOrderService {
+import 'package:ecomerce_app/src/data/api_repository/odooOrderService.dart';
+import 'package:ecomerce_app/src/config/api_config.dart';
+
+class OfflineOrderService {
   static const String _boxName = 'offline_orders';
   static Box<Map>? _box;
 
@@ -156,11 +159,11 @@ static Future<void> markAsSynced(int orderId) async {
           
           // ✅ CREAR ORDEN EN ODDO
           final odooService = OdooServiceEnhanced(
-            baseUrl: 'https://pointsalesqa.tailorw.net',
-            dbName: 'pointsales_prodv18',
+            baseUrl: ApiConfig.baseUrl,
+            dbName: 'pointsales-v18',
           );
           
-          await odooService.login('admin', 'admin');
+          await odooService.login(ApiConfig.defaultUsername, ApiConfig.defaultPassword);
           final orderService = OdooOrderService(odooService);
           
           final result = await orderService.createSaleOrder(

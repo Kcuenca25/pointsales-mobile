@@ -3,11 +3,12 @@ import 'package:ecomerce_app/src/domain/models/products_model.dart';
 import 'package:ecomerce_app/src/data/api_repository/odoo_service_enhanced.dart';
 //import 'package:ecomerce_app/src/data/api_repository/odoo_customer_service.dart';
 //import 'package:ecomerce_app/src/domain/models/customer_model.dart';
+//import 'package:ecomerce_app/src/data/api_repository/odoo_service_enhanced.dart';
 
 class OdooProductService {
-  final OdooServiceEnhanced _odooService;
+   final OdooServiceEnhanced odooService;
 
-  OdooProductService(this._odooService);
+   OdooProductService(this.odooService);
    //  MÉTODO CON PAGINACIÓN
   Future<Map<String, dynamic>> getProductsPaginated({
     int page = 0,
@@ -17,37 +18,42 @@ class OdooProductService {
     try {
       final offset = page * pageSize;
       
-      //  DOMINIO DE BÚSQUEDA (si hay query)
+      // ✅ DOMINIO DE BÚSQUEDA (si hay query)
+      final query = searchQuery.trim();
       List<dynamic> domain = [];
-      if (searchQuery.isNotEmpty) {
+      if (query.isNotEmpty) {
         domain = [
-          ['name', 'ilike', searchQuery]
+          '|', '|',
+          ['name', 'ilike', query],
+          ['default_code', 'ilike', query],
+          ['barcode', 'ilike', query],
         ];
       }
 
-      final result = await _odooService.callKw({
+      final result = await odooService.callKw({
         'service': 'object',
         'method': 'execute_kw',
         'args': [
-          _odooService.dbName,
-          _odooService.uid,
-          _odooService.password,
+          odooService.dbName,
+          odooService.uid,
+          odooService.password,
           'product.product',
           'search_read',
-          domain, // Usar dominio de búsqueda
+          [domain], // ✅ CORREGIDO: Lista dentro de lista
           {
             'fields': [
               "id", "name", "default_code", "barcode", "list_price", 
               "standard_price", "type", "categ_id", "taxes_id", "supplier_taxes_id"
             ],
             'limit': pageSize,
-            'offset': offset, // ✅ PAGINACIÓN
-            'order': 'name asc', // ✅ ORDEN CONSISTENTE
+            'offset': offset,
+            'order': 'name asc',
+            'context': odooService.getContext(),
           }
         ],
       });
 
-      //  OBTENER TOTAL DE REGISTROS (para paginación)
+      // ✅ OBTENER TOTAL DE REGISTROS
       final totalCount = await _getProductsCount(domain);
 
       return {
@@ -60,23 +66,31 @@ class OdooProductService {
       
     } catch (e) {
       print('❌ Error en getProductsPaginated: $e');
-      rethrow;
+      return {
+        'products': [],
+        'totalCount': 0,
+        'hasMore': false,
+        'currentPage': page,
+        'totalPages': 0,
+      };
     }
   }
 
   //  CONTAR TOTAL DE PRODUCTOS
+
+  // ✅ CONTAR TOTAL DE PRODUCTOS
   Future<int> _getProductsCount(List<dynamic> domain) async {
     try {
-      final result = await _odooService.callKw({
+      final result = await odooService.callKw({
         'service': 'object',
         'method': 'execute_kw',
         'args': [
-          _odooService.dbName,
-          _odooService.uid,
-          _odooService.password,
+          odooService.dbName,
+          odooService.uid,
+          odooService.password,
           'product.product',
           'search_count',
-          [domain], // Mismo dominio para contar
+          [domain],
         ],
       });
 
@@ -87,7 +101,6 @@ class OdooProductService {
     }
   }
 
-  //  PARSER DE PRODUCTO
   Product _parseProduct(Map<String, dynamic> item) {
     final category = item['categ_id'] as List?;
     final taxesIds = item['taxes_id'] as List?;
@@ -111,19 +124,21 @@ class OdooProductService {
   }
 
 
-  Future<List<Product>> getProducts({int limit = 50}) async {
-    try {
-      final result = await _odooService.callKw({
-        'service': 'object',
-        'method': 'execute',
-        'args': [
-          _odooService.dbName,
-          _odooService.uid,
-          _odooService.password,
-          'product.product',
-          'search_read',
-          [],
-          [
+
+Future<List<Product>> getProducts({int limit = 50}) async {
+  try {
+    final result = await odooService.callKw({
+      'service': 'object',
+      'method': 'execute_kw', // ✅ CAMBIADO de 'execute' a 'execute_kw'
+      'args': [
+        odooService.dbName,
+        odooService.uid,
+        odooService.password,
+        'product.product',
+        'search_read',
+        [[]], // ✅ DOMINIO VACÍO EN LISTA ANIDADA
+        {
+          'fields': [
             "id", 
             "name", 
             "default_code", 
@@ -135,49 +150,51 @@ class OdooProductService {
             "taxes_id",
             "supplier_taxes_id"
           ],
-        ],
-      });
-
-      print('✅ Productos crudos de Odoo: $result');
-      
-      return (result as List).map((item) {
-        try {
-          final category = item['categ_id'] as List?;
-          final taxesIds = item['taxes_id'] as List?;
-          final supplierTaxesIds = item['supplier_taxes_id'] as List?;
-          
-          return Product(
-            id: _parseIntField(item['id']) ?? 0,
-            name: _parseStringField(item['name']) ?? 'Sin nombre',
-            defaultCode: _parseStringField(item['default_code']), // ✅ USAR MÉTODO CORREGIDO
-            barcode: _parseStringField(item['barcode']), // ✅ USAR MÉTODO CORREGIDO
-            listPrice: _parseDoubleField(item['list_price']) ?? 0.0,
-            standardPrice: _parseDoubleField(item['standard_price']),
-            type: _parseStringField(item['type']) ?? 'consu',
-            categoryId: _parseIntField(category?[0]),
-            categoryName: _parseStringField(category?[1]),
-            description: '',
-            category: _parseStringField(category?[1]) ?? 'Sin categoría',
-            taxesIds: taxesIds,
-            supplierTaxesIds: supplierTaxesIds,
-          );
-        } catch (e) {
-          print('❌ Error procesando producto: $e - Item: $item');
-          // Retornar un producto por defecto en caso de error
-          return Product(
-            id: 0,
-            name: 'Producto con error',
-            defaultCode: '',
-            listPrice: 0.0,
-            type: 'consu',
-          );
+          'limit': limit,
+          'context': odooService.getContext(),
         }
-      }).where((product) => product.id != 0).toList(); // Filtrar productos inválidos
-    } catch (e) {
-      print('❌ Error getting products: $e');
-      rethrow;
-    }
+      ],
+    });
+
+    print('✅ Productos crudos de Odoo: $result');
+    
+    return (result as List).map((item) {
+      try {
+        final category = item['categ_id'] as List?;
+        final taxesIds = item['taxes_id'] as List?;
+        final supplierTaxesIds = item['supplier_taxes_id'] as List?;
+        
+        return Product(
+          id: _parseIntField(item['id']) ?? 0,
+          name: _parseStringField(item['name']) ?? 'Sin nombre',
+          defaultCode: _parseStringField(item['default_code']),
+          barcode: _parseStringField(item['barcode']),
+          listPrice: _parseDoubleField(item['list_price']) ?? 0.0,
+          standardPrice: _parseDoubleField(item['standard_price']),
+          type: _parseStringField(item['type']) ?? 'consu',
+          categoryId: _parseIntField(category?[0]),
+          categoryName: _parseStringField(category?[1]),
+          description: '',
+          category: _parseStringField(category?[1]) ?? 'Sin categoría',
+          taxesIds: taxesIds,
+          supplierTaxesIds: supplierTaxesIds,
+        );
+      } catch (e) {
+        print('❌ Error procesando producto: $e - Item: $item');
+        return Product(
+          id: 0,
+          name: 'Producto con error',
+          defaultCode: '',
+          listPrice: 0.0,
+          type: 'consu',
+        );
+      }
+    }).where((product) => product.id != 0).toList();
+  } catch (e) {
+    print('❌ Error getting products: $e');
+    rethrow;
   }
+}
 
   // ✅ MÉTODO CORREGIDO PARA CAMPOS STRING - MANEJA bool Y String
   String? _parseStringField(dynamic value) {
@@ -205,113 +222,160 @@ class OdooProductService {
     return null;
   }
 
-  // ✅ MÉTODO PARA BUSCAR PRODUCTOS
-  Future<List<Product>> searchProducts(String query) async {
+  Future<List<Product>> searchProducts(String searchTerm, {int limit = 20}) async {
     try {
-      final result = await _odooService.callKw({
+      final query = searchTerm.trim();
+      final result = await odooService.callKw({
         'service': 'object',
         'method': 'execute_kw',
         'args': [
-          _odooService.dbName,
-          _odooService.uid,
-          _odooService.password,
+          odooService.dbName,
+          odooService.uid,
+          odooService.password,
           'product.product',
           'search_read',
           [
-            ['name', 'ilike', query]
+            [
+              '|', '|',
+              ['name', 'ilike', query],
+              ['default_code', 'ilike', query],
+              ['barcode', 'ilike', query]
+            ]
           ],
           {
             'fields': [
-              'id', 'name', 'list_price', 'categ_id', 
-              'default_code', 'barcode', 'type'
+              'id', 'name', 'default_code', 'barcode', 'list_price',
+              'standard_price', 'type', 'categ_id', 'description',
+              'taxes_id', 'supplier_taxes_id',
+              'qty_available', 'uom_id'
             ],
+            'limit': limit,
+            'context': odooService.getContext(),
           }
         ],
       });
 
-      return (result as List).map((item) {
-        final category = item['categ_id'] as List?;
-        return Product(
-          id: _parseIntField(item['id']) ?? 0,
-          name: _parseStringField(item['name']) ?? 'Sin nombre',
-          defaultCode: _parseStringField(item['default_code']),
-          barcode: _parseStringField(item['barcode']),
-          listPrice: _parseDoubleField(item['list_price']) ?? 0.0,
-          type: _parseStringField(item['type']) ?? 'consu',
-          categoryId: _parseIntField(category?[0]),
-          categoryName: _parseStringField(category?[1]),
-          description: '',
-          category: _parseStringField(category?[1]) ?? 'Sin categoría',
-        );
-      }).where((product) => product.id != 0).toList();
+      final products = (result as List).cast<Map<String, dynamic>>();
+      return products.map((p) => Product.fromJson(p)).toList();
     } catch (e) {
-      print('❌ Error searching products: $e');
+      print('❌ Error buscando productos: $e');
       return [];
     }
   }
 
-  // ✅ MÉTODO PARA OBTENER DETALLES COMPLETOS DE UN PRODUCTO
-  Future<Product?> getProductDetails(int productId) async {
-    try {
-      final result = await _odooService.callKw({
-        'service': 'object',
-        'method': 'execute',
-        'args': [
-          _odooService.dbName,
-          _odooService.uid,
-          _odooService.password,
-          'product.product',
-          'read',
-          [productId],
-          [
-            "id", "name", "default_code", "barcode", "list_price", 
-            "standard_price", "type", "categ_id", "taxes_id", 
-            "supplier_taxes_id", "description"
-          ],
-        ],
-      });
 
-      if (result is List && result.isNotEmpty) {
-        final item = result[0];
-        final category = item['categ_id'] as List?;
-        final taxesIds = item['taxes_id'] as List?;
-        final supplierTaxesIds = item['supplier_taxes_id'] as List?;
-        
-        return Product(
-          id: _parseIntField(item['id']) ?? 0,
-          name: _parseStringField(item['name']) ?? 'Sin nombre',
-          defaultCode: _parseStringField(item['default_code']),
-          barcode: _parseStringField(item['barcode']),
-          listPrice: _parseDoubleField(item['list_price']) ?? 0.0,
-          standardPrice: _parseDoubleField(item['standard_price']),
-          type: _parseStringField(item['type']) ?? 'consu',
-          categoryId: _parseIntField(category?[0]),
-          categoryName: _parseStringField(category?[1]),
-          description: _parseStringField(item['description']) ?? '',
-          category: _parseStringField(category?[1]) ?? 'Sin categoría',
-          taxesIds: taxesIds,
-          supplierTaxesIds: supplierTaxesIds,
-        );
-      }
-      return null;
-    } catch (e) {
-      print('❌ Error getting product details: $e');
-      return null;
-    }
-  }
-   Future<bool> checkProductByBarcode(String barcode) async {
-    try {
-      final result = await _odooService.callKw({
+  // ✅ MÉTODO PARA OBTENER DETALLES COMPLETOS DE UN PRODUCTO
+Future<Product?> getProductDetails(int productId) async {
+  try {
+    // Primero intenta con read
+    final result = await odooService.callKw({
+      'service': 'object',
+      'method': 'execute_kw',
+      'args': [
+        odooService.dbName,
+        odooService.uid,
+        odooService.password,
+        'product.product',
+        'read',
+        [[productId]]
+      ],
+    });
+
+    // Si no funciona con read, intenta con search_read
+    if (result == null || (result is List && result.isEmpty)) {
+      final searchResult = await odooService.callKw({
         'service': 'object',
         'method': 'execute_kw',
         'args': [
-          _odooService.dbName,
-          _odooService.uid,
-          _odooService.password,
+          odooService.dbName,
+          odooService.uid,
+          odooService.password,
+          'product.product',
+          'search_read',
+          [
+            [['id', '=', productId]]
+          ],
+          {
+            'fields': [
+              "id", "name", "default_code", "barcode", "list_price", 
+              "standard_price", "type", "categ_id", "taxes_id", 
+              "supplier_taxes_id", "description"
+            ],
+            'limit': 1,
+          }
+        ],
+      });
+
+      final products = (searchResult as List).cast<Map<String, dynamic>>();
+      if (products.isEmpty) return null;
+      
+      final item = products.first;
+      final category = item['categ_id'] as List?;
+      final taxesIds = item['taxes_id'] as List?;
+      final supplierTaxesIds = item['supplier_taxes_id'] as List?;
+      
+      return Product(
+        id: _parseIntField(item['id']) ?? 0,
+        name: _parseStringField(item['name']) ?? 'Sin nombre',
+        defaultCode: _parseStringField(item['default_code']),
+        barcode: _parseStringField(item['barcode']),
+        listPrice: _parseDoubleField(item['list_price']) ?? 0.0,
+        standardPrice: _parseDoubleField(item['standard_price']),
+        type: _parseStringField(item['type']) ?? 'consu',
+        categoryId: _parseIntField(category?[0]),
+        categoryName: _parseStringField(category?[1]),
+        description: _parseStringField(item['description']) ?? '',
+        category: _parseStringField(category?[1]) ?? 'Sin categoría',
+        taxesIds: taxesIds,
+        supplierTaxesIds: supplierTaxesIds,
+      );
+    }
+
+    // Si read funcionó
+    if (result is List && result.isNotEmpty) {
+      final item = result[0];
+      final category = item['categ_id'] as List?;
+      final taxesIds = item['taxes_id'] as List?;
+      final supplierTaxesIds = item['supplier_taxes_id'] as List?;
+      
+      return Product(
+        id: _parseIntField(item['id']) ?? 0,
+        name: _parseStringField(item['name']) ?? 'Sin nombre',
+        defaultCode: _parseStringField(item['default_code']),
+        barcode: _parseStringField(item['barcode']),
+        listPrice: _parseDoubleField(item['list_price']) ?? 0.0,
+        standardPrice: _parseDoubleField(item['standard_price']),
+        type: _parseStringField(item['type']) ?? 'consu',
+        categoryId: _parseIntField(category?[0]),
+        categoryName: _parseStringField(category?[1]),
+        description: _parseStringField(item['description']) ?? '',
+        category: _parseStringField(category?[1]) ?? 'Sin categoría',
+        taxesIds: taxesIds,
+        supplierTaxesIds: supplierTaxesIds,
+      );
+    }
+    
+    return null;
+    
+  } catch (e) {
+    print('❌ Error getting product details: $e');
+    return null;
+  }
+}
+
+     Future<bool> checkProductByBarcode(String barcode) async {
+    try {
+      final result = await odooService.callKw({
+        'service': 'object',
+        'method': 'execute_kw',
+        'args': [
+          odooService.dbName,
+          odooService.uid,
+          odooService.password,
           'product.product',
           'search_count',
           [
-            [['barcode', '=', barcode]]
+            ['|', ['barcode', '=', barcode], ['default_code', '=', barcode]]
           ],
         ],
       });
@@ -323,67 +387,70 @@ class OdooProductService {
     }
   }
 
-  // ✅ BUSCAR PRODUCTO POR CÓDIGO DE BARRAS
-  Future<Product?> getProductByBarcode(String barcode) async {
+  /// Retorna TODOS los productos que coincidan con el código de barras o código interno.
+  /// Útil cuando un mismo código está asignado a múltiples variantes (ej: tallas diferentes).
+  Future<List<Product>> getProductsByBarcode(String barcodeIn) async {
     try {
-      final result = await _odooService.callKw({
+      final barcode = barcodeIn.trim();
+      print('🚀 Buscando TODOS los productos con código: "$barcode"');
+      final result = await odooService.callKw({
         'service': 'object',
         'method': 'execute_kw',
         'args': [
-          _odooService.dbName,
-          _odooService.uid,
-          _odooService.password,
+          odooService.dbName,
+          odooService.uid,
+          odooService.password,
           'product.product',
           'search_read',
           [
-            [['barcode', '=', barcode]]
+            ['|', ['barcode', 'ilike', barcode], ['default_code', 'ilike', barcode]]
           ],
           {
             'fields': [
               'id', 'name', 'default_code', 'barcode', 'list_price',
-              'standard_price', 'type', 'categ_id', 'qty_available'
+              'standard_price', 'type', 'categ_id', 'description',
+              'taxes_id', 'supplier_taxes_id',
+              'qty_available', 'uom_id'
             ],
+            'limit': 20,
+            'context': odooService.getContext(),
           }
         ],
       });
 
-      if (result is List && result.isNotEmpty) {
-        final item = result[0];
-        final category = item['categ_id'] as List?;
-        
-        return Product(
-          id: _parseIntField(item['id']) ?? 0,
-          name: _parseStringField(item['name']) ?? 'Sin nombre',
-          defaultCode: _parseStringField(item['default_code']),
-          barcode: _parseStringField(item['barcode']),
-          listPrice: _parseDoubleField(item['list_price']) ?? 0.0,
-          standardPrice: _parseDoubleField(item['standard_price']),
-          type: _parseStringField(item['type']) ?? 'consu',
-          categoryId: _parseIntField(category?[0]),
-          categoryName: _parseStringField(category?[1]),
-          stockQuantity: _parseDoubleField(item['qty_available']) ?? 0.0,
-        );
-      }
-      return null;
+      final products = (result as List).cast<Map<String, dynamic>>();
+      print('📦 Total productos encontrados para "$barcode": ${products.length}');
+      return products.map((p) => _parseProduct(p)).toList();
     } catch (e) {
-      print('❌ Error buscando producto por código: $e');
-      return null;
+      print('❌ Error buscando productos por barcode: $e');
+      return [];
     }
   }
 
- Future<Product?> getProductRealTime(int productId) async {
+  /// Retorna el primer producto que coincida (compatibilidad con código existente).
+  Future<Product?> getProductByBarcode(String barcodeIn) async {
+    final products = await getProductsByBarcode(barcodeIn);
+    return products.isNotEmpty ? products.first : null;
+  }
+
+Future<Product?> getProductRealTime(int productId) async {
   try {
-    final result = await _odooService.callKw({
+    final result = await odooService.callKw({
       'service': 'object',
       'method': 'execute_kw',
       'args': [
-        _odooService.dbName,
-        _odooService.uid,
-        _odooService.password,
+        odooService.dbName, // ✅ CORREGIDO: odooService (no _odooService)
+        odooService.uid,    // ✅ CORREGIDO
+        odooService.password, // ✅ CORREGIDO
         'product.product',
         'read',
-        [productId],
-        ["id", "name", "list_price", "default_code", "barcode", "type", "categ_id"] // ✅ AGREGAR type y categ_id
+        [[productId]], // ✅ DOBLE LISTA: [[productId]]
+        { // ✅ LOS CAMPOS VAN EN UN DICCIONARIO
+          'fields': [
+            "id", "name", "list_price", "default_code", "barcode", 
+            "type", "categ_id", "taxes_id", "supplier_taxes_id", "description"
+          ]
+        }
       ],
     });
 
@@ -397,9 +464,14 @@ class OdooProductService {
         listPrice: _parseDoubleField(item['list_price']) ?? 0.0,
         defaultCode: _parseStringField(item['default_code']),
         barcode: _parseStringField(item['barcode']),
-        type: _parseStringField(item['type']) ?? 'consu', // ✅ REQUERIDO
+        type: _parseStringField(item['type']) ?? 'consu',
         categoryId: _parseIntField(category?[0]),
         categoryName: _parseStringField(category?[1]),
+        description: _parseStringField(item['description']) ?? '',
+        category: _parseStringField(category?[1]) ?? 'Sin categoría',
+        standardPrice: null, // Agregar si es necesario
+        taxesIds: item['taxes_id'] as List?,
+        supplierTaxesIds: item['supplier_taxes_id'] as List?,
       );
     }
     return null;

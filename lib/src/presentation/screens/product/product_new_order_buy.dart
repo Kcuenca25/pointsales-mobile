@@ -149,20 +149,7 @@ class _ProductNewOrderBuyState extends State<ProductNewOrderBuy> with WidgetsBin
           ],
         ),
       ),
-      bottomNavigationBar: CustomCircleNavBar(
-        selectedIndex: 2, // Cambia según la posición de esta pantalla
-        onItemTapped: (index) {
-          // Lógica para navegar a la pantalla correspondiente
-          if (index == 0) {
-            Navigator.pushReplacementNamed(context, '/home');
-          } else if (index == 1) {
-            Navigator.pushReplacementNamed(context, '/users');
-          } else if (index == 2) {
-            Navigator.pushReplacementNamed(context, '/products');
-          }
-          // Agrega más navegación según tus pantallas
-        },
-      ),
+
     );
   }
 }

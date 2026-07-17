@@ -2,6 +2,7 @@
 import 'dart:convert';
 import 'dart:math';
 import 'package:http/http.dart' as http; 
+import 'package:shared_preferences/shared_preferences.dart'; 
 
 
 class OdooServiceEnhanced {
@@ -13,6 +14,7 @@ class OdooServiceEnhanced {
   String? password; 
   String? companyName; 
   int? companyId; 
+  List<int> allowedCompanyIds = []; // ✅ AGREGAR
 
   OdooServiceEnhanced({
     required this.baseUrl,
@@ -21,15 +23,20 @@ class OdooServiceEnhanced {
 
    Future<dynamic> callKw(Map<String, dynamic> params) async {
     try {
+       // Asegúrate que params tiene 'service'
+      if (!params.containsKey('service')) {
+        params['service'] = 'object'; // Valor por defecto
+      }
+      final requestBody = json.encode({
+        'jsonrpc': '2.0',
+        'method': 'call',
+        'params': params,
+        'id': Random().nextInt(1000000000),
+      });
       final response = await http.post(
         Uri.parse('$baseUrl/jsonrpc'),
         headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'jsonrpc': '2.0',
-          'method': 'call',
-          'params': params,
-          'id': Random().nextInt(1000000000),
-        }),
+        body: requestBody,
       );
 
       if (response.statusCode == 200) {
@@ -84,18 +91,25 @@ class OdooServiceEnhanced {
         'args': [dbName, username, password],
       });
       
-      uid = result;
-      this.username = username;
-      this.password = password;
-      
-      // ✅ OBTENER INFORMACIÓN DE LA EMPRESA DESPUÉS DEL LOGIN
-      if (uid != null) {
+      // ✅ VERIFICAR QUE EL RESULTADO SEA UN INT (USER ID)
+      if (result is int && result > 0) {
+        uid = result;
+        this.username = username;
+        this.password = password;
+        
+        // ✅ OBTENER INFORMACIÓN DE LA EMPRESA DESPUÉS DEL LOGIN
         await _loadCompanyInfo();
+        
+        return true;
+      } else {
+        // Login falló - Odoo devolvió false o null
+        print('❌ Login falló: $result (usuario: $username)');
+        uid = null;
+        return false;
       }
-      
-      return uid != null;
     } catch (e) {
-      print('Login Error: $e');
+      print('❌ Login Error: $e');
+      uid = null;
       return false;
     }
   }
@@ -113,17 +127,23 @@ class OdooServiceEnhanced {
           'read',
           [uid], // Leer información del usuario actual
           {
-            'fields': ['company_id', 'name']
+            'fields': ['company_id', 'name', 'company_ids'] // ✅ AGREGADO company_ids
           }
         ],
       });
 
       if (userInfo is List && userInfo.isNotEmpty) {
         final userData = userInfo[0];
-        final companyId = userData['company_id']?[0]; // ID de la compañía
+        this.companyId = userData['company_id']?[0]; // ✅ GUARDAR
+        final allowedCompaniesData = userData['company_ids']; 
+        if (allowedCompaniesData is List) {
+          allowedCompanyIds = allowedCompaniesData.cast<int>();
+        }
         
+        print('🔍 Debug Compañías User: $userData');
+
         if (companyId != null) {
-          // Obtener detalles de la compañía
+          // Obtener detalles de la compañía ACTUAL
           final companyInfo = await callKw({
             'service': 'object',
             'method': 'execute_kw',
@@ -133,16 +153,35 @@ class OdooServiceEnhanced {
               password,
               'res.company',
               'read',
-              [companyId],
-              {
-                'fields': ['name', 'display_name']
-              }
+              [companyId], // Leer solo la actual
+              {'fields': ['name', 'display_name']}
             ],
           });
 
           if (companyInfo is List && companyInfo.isNotEmpty) {
             companyName = companyInfo[0]['display_name'] ?? companyInfo[0]['name'];
-            print('✅ Empresa cargada: $companyName');
+            print('✅ Empresa ACTUAL cargada: $companyName');
+          }
+        }
+        
+        // ✅ DEBUG EXTRA: VERIFICAR SI EXISTE LMH LAST
+        if (allowedCompanyIds.isNotEmpty) {
+          final companiesList = await callKw({
+            'service': 'object',
+            'method': 'execute_kw',
+            'args': [
+              dbName,
+              uid,
+              password,
+              'res.company',
+              'read',
+              [allowedCompanyIds], // ✅ ENVOLVER EN LISTA PARA read()
+              {'fields': ['name']}
+            ],
+          });
+          print('🏢 Compañías disponibles para este usuario:');
+          for(var c in (companiesList as List)) {
+            print('   - [${c['id']}] ${c['name']}');
           }
         }
       }
@@ -154,5 +193,35 @@ class OdooServiceEnhanced {
   }
    String? getCompanyName() {
     return companyName;
+  }
+
+  // ✅ HELPER PARA CONSTRUIR CONTEXTO CON COMPAÑÍAS
+  Map<String, dynamic> getContext() {
+    final Map<String, dynamic> ctx = {};
+    if (allowedCompanyIds.isNotEmpty) {
+      ctx['allowed_company_ids'] = allowedCompanyIds;
+    } else if (companyId != null) {
+      ctx['allowed_company_ids'] = [companyId];
+    }
+    if (companyId != null) {
+      ctx['company_id'] = companyId;
+    }
+    return ctx;
+  }
+
+  // ✅ HELPER ASÍNCRONO PARA CONTEXTO BASADO EN LA UI
+  Future<Map<String, dynamic>> getContextAsync() async {
+    final prefs = await SharedPreferences.getInstance();
+    final selectedStr = prefs.getString('selected_company_id');
+    if (selectedStr != null && selectedStr.isNotEmpty) {
+      final selectedId = int.tryParse(selectedStr);
+      if (selectedId != null) {
+        return {
+          'allowed_company_ids': [selectedId],
+          'company_id': selectedId,
+        };
+      }
+    }
+    return getContext(); // Fallback to user default
   }
 }

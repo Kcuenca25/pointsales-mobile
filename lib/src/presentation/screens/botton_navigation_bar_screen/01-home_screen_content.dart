@@ -35,12 +35,12 @@ class _HomeScreenContentState extends State<HomeScreenContent> {
       print('🚀 Iniciando carga de clientes...');
       
       final odooService = OdooServiceEnhanced(
-        baseUrl: 'https://solutions.tailorw.net',
-        dbName: 'pointsales_prodv18',
+        baseUrl: ApiConfig.baseUrl,
+        dbName: 'pointsales-v18',
       );
       
       print('🔐 Intentando login...');
-      bool isAuthenticated = await odooService.login('admin', 'admin');
+      bool isAuthenticated = await odooService.login(ApiConfig.defaultUsername, ApiConfig.defaultPassword);
       
       if (isAuthenticated) {
         print('✅ Login exitoso - UID: ${odooService.uid}');

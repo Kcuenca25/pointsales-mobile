@@ -10,7 +10,7 @@ class CustomBarRow extends StatelessWidget {
     super.key,
     required this.title,
     this.onBackButtonPressed,
-    this.backgroundColor = Colors.blueAccent,
+    this.backgroundColor = const Color.fromARGB(255, 31, 182, 56),
     this.textColor = Colors.black,
   });
 

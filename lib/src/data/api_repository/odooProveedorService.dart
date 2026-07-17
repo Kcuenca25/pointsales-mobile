@@ -14,11 +14,7 @@ class OdooProveedorService {
       // 🎯 PRIMERO: VERIFICAR LA CONEXIÓN
       print('🔐 Verificando autenticación...');
       if (odooService.uid == null) {
-        print('❌ No hay UID - Reautenticando...');
-        final loggedIn = await odooService.login('admin', 'admin');
-        if (!loggedIn) {
-          throw Exception('No se pudo autenticar con Odoo');
-        }
+         throw Exception('OdooProveedorService: UID es nulo. El servicio debe estar autenticado previamente.');
       }
       
       print('✅ Autenticado - UID: ${odooService.uid}');
@@ -34,13 +30,13 @@ class OdooProveedorService {
           'res.partner',
           'search_read',
           [
-            [['is_company', '=', true]] // ✅ MISMO FILTRO QUE CLIENTES
+            [['is_company', '=', true]] // ✅ FILTRO DE EMPRESAS RESTAURADO
           ],
           {
             'fields': [
               'id', 'name', 'email', 'phone', 'mobile', 'vat',
               'street', 'city', 'zip', 'country_id', 'is_company',
-              'commercial_company_name' // ✅ AGREGAR ESTE CAMPO
+              // 'commercial_company_name' // REMOVIDO PARA EVITAR ERRORES
             ],
             'limit': limit,
             'order': 'name asc',
@@ -57,36 +53,57 @@ class OdooProveedorService {
         }
       }
 
-      final proveedores = (result as List).map((item) {
-        print('🔍 Procesando proveedor: ${item['name']} (ID: ${item['id']})');
-        
-        return Proveedor(
-          id: item['id'] as int,
-          name: item['name'] as String,
-          email: item['email'] as String?,
-          phone: item['phone'] as String?,
-          mobile: item['mobile'] as String?,
-          vat: item['vat'] as String?,
-          street: item['street'] as String?,
-          city: item['city'] as String?,
-          zip: item['zip'] as String?,
-          isCompany: item['is_company'] as bool? ?? true,
-        );
-      }).toList();
+      final proveedores = <Proveedor>[];
+      
+      for (var item in (result as List)) {
+        try {
+          // print('🔍 Procesando proveedor: ${item['name']} (ID: ${item['id']})');
+          
+          final proveedor = Proveedor(
+            id: _parseInt(item['id']),
+            name: _parseString(item['name']) ?? 'Sin nombre',
+            email: _parseString(item['email']),
+            phone: _parseString(item['phone']),
+            mobile: _parseString(item['mobile']),
+            vat: _parseString(item['vat']),
+            street: _parseString(item['street']),
+            city: _parseString(item['city']),
+            zip: _parseString(item['zip']),
+            isCompany: _parseBool(item['is_company']),
+          );
+          
+          proveedores.add(proveedor);
+          
+        } catch (e) {
+          print('⚠️ Error procesando proveedor individual: $e');
+        }
+      }
 
       print('✅ Proveedores cargados: ${proveedores.length} empresas');
-      
-      // 🎯 DEBUG: LISTAR TODOS LOS PROVEEDORES ENCONTRADOS
-      for (var proveedor in proveedores) {
-        print('   🏢 ${proveedor.name} (ID: ${proveedor.id})');
-      }
-      
       return proveedores;
       
     } catch (e) {
       print('❌ Error cargando proveedores: $e');
-      print('   StackTrace: ${e.toString()}');
       return [];
     }
+  }
+
+  // ✅ MÉTODOS AUXILIARES PARA PREVENIR ERRORES DE TIPO (Igual que en CustomerService)
+  int _parseInt(dynamic value) {
+    if (value is int) return value;
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
+  }
+
+  String? _parseString(dynamic value) {
+    if (value is String) return value.isNotEmpty ? value : null;
+    if (value is bool) return null; // Odoo usa false para valores vacíos
+    return null;
+  }
+
+  bool _parseBool(dynamic value) {
+    if (value is bool) return value;
+    if (value is String) return value.toLowerCase() == 'true';
+    return true; // Por defecto asumimos true si falla, o ajustar según necesidad
   }
 }

@@ -11,6 +11,7 @@ class ArticuloItem {
   final double? rating;
   final int? reviews;
   int cantidad;
+  final bool tieneImpuestos; 
 
   ArticuloItem({
     required this.id,
@@ -23,23 +24,58 @@ class ArticuloItem {
     this.rating,
     this.reviews,
     this.cantidad = 1,
+    this.tieneImpuestos = false,
+    
   });
 
-  // ✅ MÉTODO COPYWITH PARA ACTUALIZAR DESDE PRODUCTO ODDO
+    Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'nombre': nombre,
+      'categoria': categoria,
+      'subcategoria': subcategoria,
+      'precio': precio,
+      'descripcion': descripcion,
+      'cantidad': cantidad,
+      'imagen': imagen,
+      'rating': rating,
+      'reviews': reviews,
+      'tieneImpuestos': tieneImpuestos,
+    };
+  }
+  // ✅ AGREGA ESTE FACTORY
+  factory ArticuloItem.fromJson(Map<String, dynamic> json) {
+    return ArticuloItem(
+      id: json['id'] ?? 0,
+      nombre: json['nombre'] ?? '',
+      categoria: json['categoria'] ?? '',
+      subcategoria: json['subcategoria'] ?? '',
+      precio: (json['precio'] ?? 0.0).toDouble(),
+      descripcion: json['descripcion'] ?? '',
+      cantidad: json['cantidad'] ?? 1,
+      imagen: json['imagen'] ?? 'default_product',
+      rating: (json['rating'] ?? 4.0).toDouble(),
+      reviews: json['reviews'] ?? 0,
+      tieneImpuestos: json['tieneImpuestos'] ?? false,
+    );
+  }
+
   ArticuloItem copyWithProduct(Product product) {
     return ArticuloItem(
       id: id,
-      nombre: product.name, // ✅ ACTUALIZAR NOMBRE
-      categoria: product.categoryName ?? categoria, // ✅ ACTUALIZAR CATEGORÍA
-      subcategoria: product.typeDisplay, // ✅ ACTUALIZAR SUBCATEGORÍA
-      precio: product.listPrice, // ✅ ACTUALIZAR PRECIO
-      descripcion: product.description ?? descripcion, // ✅ ACTUALIZAR DESCRIPCIÓN
+      nombre: product.name,
+      categoria: product.categoryName ?? categoria,
+      subcategoria: product.typeDisplay,
+      precio: product.listPrice,
+      descripcion: product.description ?? descripcion,
+      cantidad: cantidad,
       imagen: imagen,
       rating: rating,
       reviews: reviews,
-      cantidad: cantidad,
+      tieneImpuestos: tieneImpuestos,
     );
   }
+
 
   // ✅ MÉTODO COPYWITH GENERAL
   ArticuloItem copyWith({

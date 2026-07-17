@@ -8,6 +8,7 @@ import 'package:ecomerce_app/src/domain/models/inventario_models.dart';
 import 'package:ecomerce_app/src/domain/models/products_model.dart';
 import 'package:ecomerce_app/src/data/api_repository/odoo_service_enhanced.dart';
 import 'package:ecomerce_app/src/data/api_repository/odoo_product_service.dart';
+import 'package:ecomerce_app/src/config/api_config.dart';
 
 class NuevaTomaInventarioScreen extends StatefulWidget {
   final String usuarioActual;
@@ -50,11 +51,11 @@ class _NuevaTomaInventarioScreenState extends State<NuevaTomaInventarioScreen> {
       print('🔄 Cargando productos reales desde Odoo...');
 
       final odooService = OdooServiceEnhanced(
-        baseUrl: 'https://solutions.tailorw.net',
-        dbName: 'pointsales_prodv18',
+        baseUrl: ApiConfig.baseUrl,
+        dbName: 'pointsales-v18',
       );
       
-      final isAuthenticated = await odooService.login('admin', 'admin');
+      final isAuthenticated = await odooService.login(ApiConfig.defaultUsername, ApiConfig.defaultPassword);
       
       if (!isAuthenticated) {
         throw Exception('Error de autenticación con Odoo');

@@ -9,6 +9,7 @@ class OdooInventoryService {
   // ✅ BUSCAR PRODUCTO POR CÓDIGO (Para escanear)
   Future<Map<String, dynamic>?> searchProductByCode(String barcode) async {
     try {
+      final code = barcode.trim();
       final result = await odooService.callKw({
         'service': 'object',
         'method': 'execute_kw',
@@ -19,7 +20,7 @@ class OdooInventoryService {
           'product.product',
           'search_read',
           [
-            [['default_code', '=', barcode]]
+            ['|', ['default_code', '=', code], ['barcode', '=', code]]
           ],
           {
             'fields': [
@@ -30,6 +31,7 @@ class OdooInventoryService {
               'qty_available',
               'type'
             ],
+            'context': odooService.getContext(),
           }
         ],
       });
@@ -357,7 +359,7 @@ Future<List<Map<String, dynamic>>> getProductsPaginated({
         odooService.password,
         'product.product',
         'search_read',
-        [domain], // ✅ Lista que contiene el dominio completo
+        [domain],
         {
           'fields': [
             'id', 'name', 'default_code', 'categ_id', 
@@ -377,6 +379,73 @@ Future<List<Map<String, dynamic>>> getProductsPaginated({
   } catch (e) {
     print('❌ Error en getProductsPaginated: $e');
     return [];
+  }
+}
+
+// ✅ NUEVO: Consulta stock.quant igual que la vista /odoo/physical-inventory de la web
+// Retorna los mismos 1855 registros que ves en "Ajustes de inventario"
+Future<List<Map<String, dynamic>>> getPhysicalInventoryQuants({
+  int offset = 0,
+  int limit = 80,
+  String searchQuery = '',
+}) async {
+  try {
+    // Odoo web filtra por 'internal' y 'transit' y permite company_id = False (compartido) o la empresa actual
+    List<dynamic> domain = [
+      ['location_id.usage', 'in', ['internal', 'transit']],
+      '|',
+      ['company_id', '=', false],
+      ['company_id', '=', odooService.companyId],
+    ];
+
+    // Búsqueda por nombre, código de referencia o código de barras
+    if (searchQuery.isNotEmpty) {
+      domain = [
+        '&',
+        '&',
+        ['location_id.usage', 'in', ['internal', 'transit']],
+        '|',
+        ['company_id', '=', false],
+        ['company_id', '=', odooService.companyId],
+        '|',
+        '|',
+        ['product_id.name', 'ilike', searchQuery],
+        ['product_id.default_code', 'ilike', searchQuery],
+        ['product_id.barcode', 'ilike', searchQuery],
+      ];
+    }
+
+    final result = await odooService.callKw({
+      'service': 'object',
+      'method': 'execute_kw',
+      'args': [
+        odooService.dbName,
+        odooService.uid,
+        odooService.password,
+        'stock.quant',
+        'search_read',
+        [domain],
+        {
+          'fields': [
+            'id',
+            'product_id',        // [id, nombre]
+            'quantity',          // Cantidad a la mano
+            'inventory_quantity', // Cantidades contadas
+            'location_id',
+          ],
+          'offset': offset,
+          'limit': limit,
+          'order': 'id ASC', // Usar id para evitar inestabilidad en la paginación
+        }
+      ],
+    });
+
+    final quants = (result as List).cast<Map<String, dynamic>>();
+    print('📦 Quants obtenidos: ${quants.length} (offset: $offset)');
+    return quants;
+  } catch (e) {
+    print('❌ Error en getPhysicalInventoryQuants: $e');
+    rethrow; // Lanzar el error para que la UI lo muestre en lugar de detenerse
   }
 }
 }

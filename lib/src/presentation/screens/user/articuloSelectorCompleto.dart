@@ -5,20 +5,24 @@ import 'package:ecomerce_app/src/domain/models/products_model.dart';
 import 'package:ecomerce_app/src/data/api_repository/odoo_product_service.dart';
 import 'package:ecomerce_app/src/data/api_repository/odoo_service_enhanced.dart';
 
-import 'package:ecomerce_app/src/services/cache_service.dart';
-import 'package:ecomerce_app/src/services/connectivity_service.dart';
+//import 'package:ecomerce_app/src/services/cache_service.dart';
+//import 'package:ecomerce_app/src/services/connectivity_service.dart';
 
+import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:ecomerce_app/src/config/api_config.dart';
 
 class ArticuloSelectorScreen extends StatefulWidget {
   final Function(ArticuloItem, int) onArticuloAgregado; 
   final Function(ArticuloItem) onArticuloEliminado;
   final List<ArticuloItem> articulosSeleccionadosIniciales;
+  final bool esParaVenta; // [NEW] Flag para controlar impuestos
 
   const ArticuloSelectorScreen({
     super.key, 
     required this.onArticuloAgregado,
     required this.onArticuloEliminado,
     required this.articulosSeleccionadosIniciales,
+    this.esParaVenta = true, // Default true para compatibilidad
   });
 
   @override
@@ -28,41 +32,32 @@ class ArticuloSelectorScreen extends StatefulWidget {
 class _ArticuloSelectorScreenState extends State<ArticuloSelectorScreen> {
   final TextEditingController _searchController = TextEditingController();
   final Map<int, int> _cantidadesAgregadas = {};
+  final MobileScannerController _scannerController = MobileScannerController(
+    formats: [BarcodeFormat.qrCode, BarcodeFormat.code128, BarcodeFormat.ean13, BarcodeFormat.upcA],
+    facing: CameraFacing.back,
+  );
 
-  //  VARIABLES DE PAGINACIÓN CORREGIDAS
-    List<Product> _allProducts = [];
+  List<Product> _allProducts = [];
   int _currentPage = 0;
   final int _pageSize = 20;
   bool _isLoading = false;
   bool _hasMore = true;
   String _currentSearchQuery = '';
   Timer? _searchDebounceTimer;
-
-  // ❌ ELIMINAR VARIABLES DUPLICADAS O CONFLICTIVAS
-  // String _searchQuery = ''; // ← ELIMINAR
-  // late Future<List<Product>> _futureProducts; // ← ELIMINAR
-  // List<Product> _filteredProducts = []; // ← ELIMINAR
-  // final int _itemsPerLoad = 10; // ← ELIMINAR
-  // int _visibleItems = 10; // ← ELIMINAR
-  // bool _isLoadingMore = false; // ← ELIMINAR
-
-  // Variables que SÍ se mantienen
   bool _mostrarBusqueda = false;
   String _categoriaSeleccionada = 'Todas las categorías';
-  //final Map<int, GlobalKey> _dismissibleKeys = {};
+  bool _mostrarScanner = false;
+  bool _isProcessingScan = false;
 
   @override
   void initState() {
     super.initState();
     
-    //  SOLO CARGAR PAGINACIÓN, NO FUTURE
     _loadMoreProducts(reset: true);
-     
     _searchController.addListener(() {
       _onSearchChanged(_searchController.text); 
     });
 
-    // INICIALIZAR CON PRODUCTOS SELECCIONADOS
     for (var articulo in widget.articulosSeleccionadosIniciales) {
       _cantidadesAgregadas[articulo.id] = articulo.cantidad;
      // _dismissibleKeys[articulo.id] = GlobalKey();
@@ -73,9 +68,142 @@ class _ArticuloSelectorScreenState extends State<ArticuloSelectorScreen> {
   void dispose() {
     _searchDebounceTimer?.cancel();
     _searchController.dispose();
+     _scannerController.dispose();
     super.dispose();
   }
 
+
+// ✅ MÉTODO PARA MANEJAR EL ESCANEO (ACTUALIZADO)
+void _handleScan(BarcodeCapture capture) async {
+  if (_isProcessingScan || capture.barcodes.isEmpty) return;
+  
+  final code = capture.barcodes.first.rawValue;
+  if (code == null || code.isEmpty) return;
+
+  _isProcessingScan = true;
+  
+  try {
+    // ✅ BUSCAR EN TIEMPO REAL EN ODDO
+    final odooService = OdooServiceEnhanced(
+      baseUrl: ApiConfig.baseUrl,
+      dbName: ApiConfig.dbName,
+    );
+    
+    await odooService.login(ApiConfig.defaultUsername, ApiConfig.defaultPassword);
+    final productService = OdooProductService(odooService);
+    
+    Product? productRealTime = await productService.getProductByBarcode(code);
+    
+    if (productRealTime != null) {
+      print('✅ Producto escaneado en Selector: ${productRealTime.name}');
+      
+      // ✅ OBTENER DETALLES COMPLETOS
+      final productDetails = await productService.getProductDetails(productRealTime.id);
+      
+      if (productDetails != null) {
+        productRealTime = productDetails;
+      }
+      
+      // ✅ USAR LAS FUNCIONES PARA CALCULAR IMPUESTOS
+      final precioConImpuesto = _getPrecioConImpuesto(productRealTime);
+      final tieneImpuestos = _tieneImpuestos(productRealTime);
+
+      final articuloActualizado = ArticuloItem(
+        id: productRealTime.id,
+        nombre: productRealTime.name,
+        categoria: productRealTime.categoryName ?? 'Sin categoría',
+        subcategoria: productRealTime.typeDisplay,
+        precio: precioConImpuesto, // ✅ INCLUIR IMPUESTO
+        descripcion: productRealTime.description ?? productRealTime.name,
+        cantidad: 1,
+        tieneImpuestos: tieneImpuestos,
+      );
+      
+      _mostrarDetalleProductoEscaneado(articuloActualizado);
+    } else {
+      // ✅ Fallback a búsqueda local
+      final productoCached = _allProducts.firstWhere(
+        (p) => p.barcode == code || p.defaultCode == code,
+        orElse: () => Product(
+          id: -1,
+          name: '',
+          listPrice: 0.0,
+          type: 'consu',
+        ),
+      );
+      
+      if (productoCached.id != -1) {
+        // ✅ USAR LAS FUNCIONES PARA CALCULAR IMPUESTOS
+        final precioConImpuesto = _getPrecioConImpuesto(productoCached);
+        final tieneImpuestos = _tieneImpuestos(productoCached);
+        
+        final articulo = ArticuloItem(
+          id: productoCached.id,
+          nombre: productoCached.name,
+          categoria: productoCached.categoryName ?? 'Sin categoría',
+          subcategoria: productoCached.typeDisplay,
+          precio: precioConImpuesto, // ✅ INCLUIR IMPUESTO
+          descripcion: productoCached.description ?? productoCached.name,
+          cantidad: 1,
+          tieneImpuestos: tieneImpuestos,
+        );
+        _mostrarDetalleProductoEscaneado(articulo);
+      } else {
+        _mostrarMensajeError('Producto no encontrado con código: $code');
+      }
+    }
+  } catch (e) {
+    print('❌ Error en escaneo: $e');
+    _mostrarMensajeError('Error al escanear: $e');
+  } finally {
+    _isProcessingScan = false;
+    setState(() => _mostrarScanner = false);
+  }
+}
+
+  // ✅ MÉTODO AUXILIAR PARA MOSTRAR MENSAJES DE ERROR
+  void _mostrarMensajeError(String mensaje) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(mensaje),
+        backgroundColor: Colors.orange,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  // ✅ MÉTODO PARA MOSTRAR DETALLE DEL PRODUCTO ESCANEADO
+  void _mostrarDetalleProductoEscaneado(ArticuloItem producto) {
+    final cantidadExistente = _cantidadesAgregadas[producto.id] ?? 0;
+
+    // ✅ BUSCAR EL PRODUCTO CORRESPONDIENTE EN LA LISTA
+    final product = _allProducts.firstWhere(
+      (p) => p.id == producto.id,
+      orElse: () => Product(
+        id: producto.id,
+        name: producto.nombre,
+        defaultCode: '',
+        listPrice: producto.precio,
+        type: producto.subcategoria == 'Servicio' ? 'service' : 'consu',
+        categoryName: producto.categoria,
+      ),
+    );
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ProductDetailScreen(
+          articulo: producto,
+          product: product,
+          cantidadInicial: cantidadExistente,
+          onAgregarArticulo: (articulo, cantidad) {
+            _agregarArticulo(articulo, cantidad);
+          },
+          esParaVenta: widget.esParaVenta, // ✅ Pasar el flag
+        ),
+      ),
+    );
+  }
   // BÚSQUEDA CON DEBOUNCE
   void _onSearchChanged(String query) {
     _searchDebounceTimer?.cancel();
@@ -113,11 +241,11 @@ class _ArticuloSelectorScreenState extends State<ArticuloSelectorScreen> {
 
     try {
       final odooService = OdooServiceEnhanced(
-        baseUrl: 'https://solutions.tailorw.net',
-        dbName: 'pointsales_prodv18',
+        baseUrl: ApiConfig.baseUrl,
+        dbName: ApiConfig.dbName,
       );
       
-      await odooService.login('admin', 'admin');
+      await odooService.login(ApiConfig.defaultUsername, ApiConfig.defaultPassword);
       final productService = OdooProductService(odooService);
       
       final result = await productService.getProductsPaginated(
@@ -171,133 +299,34 @@ class _ArticuloSelectorScreenState extends State<ArticuloSelectorScreen> {
   }
 
 
-// //Future<List<Product>> _loadProductsFromOdoo() async {
-//   final tieneInternet = await ConnectivityService.hasInternet();
-  
-//   if (tieneInternet) {
-//     // ✅ CON INTERNET: Cargar de Odoo + actualizar caché
-//     return await _loadProductsFromOdooOnline();
-//   } else {
-//     // 🔴 SIN INTERNET: Usar caché local
-//     return await _loadProductsFromCache(); // 
-//   }
-// }
-
-// //Future<List<Product>> _loadProductsFromOdooOnline() async {
-//   try {
-//     print('🔵 Modo Online - Cargando productos de Odoo...');
-    
-//     final odooService = OdooServiceEnhanced(
-//       baseUrl: 'https://pointsalesqa.tailorw.net',
-//       dbName: 'pointsales_prodv18',
-//     );
-    
-//     bool isAuthenticated = await odooService.login('admin', 'admin');
-    
-//     if (isAuthenticated) {
-//       final productService = OdooProductService(odooService);
-//       final products = await productService.getProducts(limit: 50);
-      
-//       // ✅ GUARDAR EN CACHÉ
-//       await CacheService.saveProducts(products);
-      
-//       if (mounted) {
-//         setState(() {
-//           _allProducts = products;
-//           _filteredProducts = products;
-//         });
-//       }
-      
-//       print('✅ ${products.length} productos cargados desde Odoo y guardados en caché');
-      
-//       for (var product in products.take(3)) {
-//         print('   📦 ${product.name} - \$${product.listPrice}');
-//       }
-//       if (products.length > 3) {
-//         print('   ... y ${products.length - 3} más');
-//       }
-      
-//       return products; // ✅ YA ESTÁ BIEN ESTA LÍNEA
-//     } else {
-//       throw Exception('Error de autenticación con Odoo');
-//     }
-//   } catch (e) {
-//     print('❌ Error cargando productos de Odoo: $e');
-//     // Fallback: intentar cargar del caché
-//     return await _loadProductsFromCache(); // ✅ CORREGIDO
-//   }
-// }
-
-// Future<List<Product>> _loadProductsFromCache() async {
-//   print('🔴 [DEBUG] _loadProductsFromCache INICIADO');
-  
-//   try {
-//     print('${_getTimestamp()} 🔴 Modo Offline - Cargando productos del caché...');
-    
-//     final productosCache = await CacheService.getCachedProducts();
-    
-//     print('🔴 [DEBUG] Productos del caché: ${productosCache.length}');
-    
-//     if (productosCache.isNotEmpty && mounted) {
-//       print('🔴 [DEBUG] Intentando mostrar SnackBar para productos...');
-      
-//       ScaffoldMessenger.of(context).showSnackBar(
-//         SnackBar(
-//           content: Row(
-//             children: [
-//               Icon(Icons.wifi_off, size: 20, color: Colors.orange),
-//               SizedBox(width: 8),
-//               Expanded(
-//                 child: Text('📦 ${productosCache.length} productos cargados del caché'),
-//               ),
-//             ],
-//           ),
-//           duration: Duration(seconds: 4),
-//           backgroundColor: Colors.orange[800],
-//           behavior: SnackBarBehavior.floating,
-//         ),
-//       );
-      
-//       print('🔴 [DEBUG] SnackBar de productos mostrado');
-      
-//       setState(() {
-//         _allProducts = productosCache;
-//         _filteredProducts = productosCache;
-//       });
-      
-//       print('${_getTimestamp()} ✅ ${productosCache.length} productos cargados del caché');
-//       print('🔴 [DEBUG] _loadProductsFromCache FINALIZADO - ÉXITO'); // 
-      
-//       return productosCache;
-//     } else {
-//       print('🔴 [DEBUG] No hay productos en caché o widget no mounted');
-//       print('🔴 [DEBUG] _loadProductsFromCache FINALIZADO - VACÍO'); // 
-//       return [];
-//     }
-//   } catch (e) {
-//     print('❌ Error cargando productos del caché: $e');
-//     print('🔴 [DEBUG] _loadProductsFromCache FINALIZADO - ERROR'); // 
-//     return [];
-//   }
-// }
-
 
 String _getTimestamp() {
   return '[${DateTime.now().hour}:${DateTime.now().minute}:${DateTime.now().second}]';
 } 
   
  ArticuloItem _productToArticuloItem(Product product) {
-    return ArticuloItem(
-      id: product.id,
-      nombre: product.name,
-      categoria: product.categoryName ?? 'Sin categoría',
-      subcategoria: product.typeDisplay,
-      precio: product.listPrice,
-      descripcion: product.description ?? product.name,
-      cantidad: 1,
-      imagen: 'default_product',
-    );
-  }
+ final esParaVentas = widget.esParaVenta; // ✅ Usar el flag del widget 
+ final precioFinal = esParaVentas ? _getPrecioConImpuesto(product) : product.listPrice;
+  final tieneImpuestos = esParaVentas && _tieneImpuestos(product);
+  
+  print('💰 Convirtiendo Product a ArticuloItem:');
+  print('   Nombre: ${product.name}');
+  print('   Precio base: \$${product.listPrice}');
+  print('   Precio final: \$${precioFinal.toStringAsFixed(2)}');
+  print('   Tiene impuestos: $tieneImpuestos');
+  
+  return ArticuloItem(
+    id: product.id,
+    nombre: product.name,
+    categoria: product.categoryName ?? 'Sin categoría',
+    subcategoria: product.typeDisplay,
+     precio: precioFinal, // ✅ USAR PRECIO CON IMPUESTOS
+    descripcion: product.description ?? product.name,
+    cantidad: 1,
+    imagen: 'default_product',
+    tieneImpuestos: tieneImpuestos, // ✅ GUARDAR ESTADO DE IMPUESTOS
+  );
+}
 
   // ✅ OBTENER CATEGORÍAS ÚNICAS DE PRODUCTOS ODDO
   List<String> get categorias {
@@ -309,80 +338,29 @@ String _getTimestamp() {
     return ['Todas las categorías', ...categoriasUnicas];
   }
 
-  // List<ArticuloItem> get articulosFiltrados {
-  //   final articulos = _filteredProducts.map(_productToArticuloItem).toList();
-    
-  //   return articulos.where((articulo) {
-  //     // Filtro de búsqueda
-  //     final matchesSearch = _searchQuery.isEmpty ||
-  //         articulo.nombre.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-  //         articulo.descripcion.toLowerCase().contains(_searchQuery.toLowerCase());
 
-  //     // Filtro de categoría
-  //     final matchesCategoria = _categoriaSeleccionada == 'Todas las categorías' || 
-  //         articulo.categoria == _categoriaSeleccionada;
-
-  //     return matchesSearch && matchesCategoria;
-  //   }).toList();
-  // }
-
-  // CONVERTIR PRODUCTOS A ARTÍCULOS
   List<ArticuloItem> get articulosFiltrados {
     return _allProducts.map(_productToArticuloItem).toList();
   }
 
 
-  // List<ArticuloItem> get visibleArticulos {
-  //   return articulosFiltrados.take(_visibleItems).toList();
-  // }
-
-  //bool get canLoadMore => _visibleItems < articulosFiltrados.length;
-
-  // void _filtrarProductos(String query) {
-  //   setState(() {
-  //     if (query.isEmpty) {
-  //       _filteredProducts = _allProducts;
-  //     } else {
-  //       _filteredProducts = _allProducts.where((product) {
-  //         // ✅ BÚSQUEDA POR NOMBRE, DESCRIPCIÓN Y CÓDIGO
-  //         return product.name.toLowerCase().contains(query.toLowerCase()) ||
-  //               // (product.description?.toLowerCase().contains(query.toLowerCase()) ?? false) ||
-  //                (product.defaultCode?.toLowerCase().contains(query.toLowerCase()) ?? false) ||
-  //                (product.barcode?.toLowerCase().contains(query.toLowerCase()) ?? false);
-  //       }).toList();
-  //     }
-  //     _visibleItems = _itemsPerLoad; // Resetear paginación
-  //   });
-  // }
-
-  // Future<void> _loadMoreItems() async {
-  //   if (_isLoadingMore || !canLoadMore) return;
-
-  //   setState(() {
-  //     _isLoadingMore = true;
-  //   });
-
-  //   await Future.delayed(const Duration(milliseconds: 500));
-
-  //   setState(() {
-  //     _visibleItems += _itemsPerLoad;
-  //     _isLoadingMore = false;
-  //   });
-  // }
-
-  // void _resetPagination() {
-  //   setState(() {
-  //     _visibleItems = _itemsPerLoad;
-  //   });
-  // }
 
   void _agregarArticulo(ArticuloItem articulo, [int cantidad = 1]) {
-    setState(() {
-      final cantidadActual = _cantidadesAgregadas[articulo.id] ?? 0;
-      _cantidadesAgregadas[articulo.id] = cantidadActual + cantidad;
-      widget.onArticuloAgregado(articulo, cantidad);
-    });
-  }
+  setState(() {
+    final cantidadActual = _cantidadesAgregadas[articulo.id] ?? 0;
+    _cantidadesAgregadas[articulo.id] = cantidadActual + cantidad;
+    widget.onArticuloAgregado(articulo, cantidad);
+  });
+  
+  // ✅ FEEDBACK VISUAL INMEDIATO
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text('✅ ${articulo.nombre} agregado'),
+      duration: const Duration(seconds: 1),
+      behavior: SnackBarBehavior.floating,
+    ),
+  );
+}
 
   void _quitarArticulo(int articuloId, ArticuloItem articulo) {
     setState(() {
@@ -498,12 +476,18 @@ String _getTimestamp() {
 Widget build(BuildContext context) {
   return Scaffold(
     appBar: AppBar(
-      title: const Text("Seleccionar Productos"),
+      title: const Text(" Productos"),
       leading: IconButton(
         icon: const Icon(Icons.arrow_back),
         onPressed: () => Navigator.pop(context),
       ),
       actions: [
+        IconButton(
+            icon: const Icon(Icons.qr_code_scanner),
+            onPressed: () => setState(() => _mostrarScanner = !_mostrarScanner),
+            tooltip: 'Escanear código de barras',
+          ),
+
         IconButton(
           icon: const Icon(Icons.search),
           onPressed: () {
@@ -518,9 +502,25 @@ Widget build(BuildContext context) {
   );
 }
 
-  Widget _buildContent() {
+
+   Widget _buildContent() {
     return Column(
       children: [
+        // ✅ SCANNER (igual que en NuevaOrdenPage)
+        if (_mostrarScanner)
+          Container(
+            margin: const EdgeInsets.symmetric(vertical: 10),
+            height: MediaQuery.of(context).size.height * 0.35,
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.blue, width: 2),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: MobileScanner(
+              controller: _scannerController, 
+              onDetect: _handleScan
+            ),
+          ),
+
         // Barra de búsqueda 
         if (_mostrarBusqueda)
           Padding(
@@ -530,15 +530,25 @@ Widget build(BuildContext context) {
               decoration: InputDecoration(
                 hintText: "Buscar por nombre, código o barras...",
                 prefixIcon: const Icon(Icons.search),
-                suffixIcon: _currentSearchQuery.isNotEmpty
-                    ? IconButton(
+                suffixIcon: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_currentSearchQuery.isNotEmpty)
+                      IconButton(
                         icon: const Icon(Icons.clear),
                         onPressed: () {
                           _searchController.clear();
                           _performSearch('');
                         },
-                      )
-                    : null,
+                      ),
+                    // Botón de escáner dentro del campo de búsqueda también
+                    IconButton(
+                      icon: const Icon(Icons.qr_code_scanner),
+                      onPressed: () => setState(() => _mostrarScanner = !_mostrarScanner),
+                      tooltip: 'Escanear código',
+                    ),
+                  ],
+                ),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 filled: true,
                 fillColor: Colors.grey[100],
@@ -636,7 +646,38 @@ Widget build(BuildContext context) {
     );
   }
 
+  // ✅ AGREGAR ESTAS FUNCIONES EN ArticuloSelectorScreen
+double _getPrecioConImpuesto(Product product) {
+  final tieneImpuestos = product.taxesIds != null && product.taxesIds!.isNotEmpty;
+  final tieneImpuestoCompra = product.supplierTaxesIds != null && 
+                             product.supplierTaxesIds!.isNotEmpty;
   
+  print('🔍 _getPrecioConImpuesto para: ${product.name}');
+  print('   Precio base: \$${product.listPrice}');
+  print('   Tiene impuestos venta: $tieneImpuestos');
+  print('   Tiene impuestos compra: $tieneImpuestoCompra');
+
+  // ✅ SI NO ES PARA VENTA, RETORNAR PRECIO BASE SIN IMPUESTOS
+  if (!widget.esParaVenta) {
+     print('   ⚠️ Modo Compra: Sin impuestos forzado: \$${product.listPrice}');
+     return product.listPrice;
+  }
+  
+  if (tieneImpuestos || tieneImpuestoCompra) {
+    final precioConImpuesto = product.listPrice;
+    print('   ✅ ITBIS incl en BD: \$${precioConImpuesto.toStringAsFixed(2)}');
+    return precioConImpuesto;
+  }
+  
+  print('   ⚠️ Sin impuestos: \$${product.listPrice}');
+  return product.listPrice;
+}
+
+bool _tieneImpuestos(Product product) {
+  return (product.taxesIds != null && product.taxesIds!.isNotEmpty) ||
+         (product.supplierTaxesIds != null && product.supplierTaxesIds!.isNotEmpty);
+}
+
  //  LOADER PARA CARGAR MÁS
   Widget _buildLoadMoreLoader() {
     return Padding(
@@ -652,196 +693,258 @@ Widget build(BuildContext context) {
     );
   }
 
+Widget _buildArticuloItem(ArticuloItem articulo, int cantidad, bool yaAgregado, Product product) {
+  // ✅ USAR LAS FUNCIONES PARA CALCULAR IMPUESTOS
+  final tieneImpuestos = _tieneImpuestos(product);
+  final precioConImpuesto = _getPrecioConImpuesto(product);
 
+  // ✅ CLAVE ÚNICA Y ESTABLE QUE INCLUYA EL ESTADO ACTUAL
+  final uniqueKey = '${articulo.id}_${product.id}_${_currentPage}_${cantidad}_${_currentSearchQuery}';
 
-//  ITEM DE PRODUCTO (adaptado para 4 parámetros)
-  Widget _buildArticuloItem(ArticuloItem articulo, int cantidad, bool yaAgregado, Product product) {
-  //  if (!_dismissibleKeys.containsKey(articulo.id)) {
-   //   _dismissibleKeys[articulo.id] = GlobalKey();
-   // }
-    
-    // CALCULAR PRECIO CON IMPUESTO
-    final tieneImpuestos = product.taxesIds != null && product.taxesIds!.isNotEmpty;
-    final precioConImpuesto = tieneImpuestos ? 
-        product.listPrice * 1.18 : product.listPrice;
+  return Dismissible(
+    key: Key(uniqueKey), // ✅ CLAVE MÁS ESTABLE Y ÚNICA
+    direction: DismissDirection.startToEnd,
+    background: Container(
+      color: Colors.green,
+      alignment: Alignment.centerLeft,
+      padding: const EdgeInsets.only(left: 20),
+      child: const Row(
+        children: [
+          Icon(Icons.add, color: Colors.white),
+          SizedBox(width: 8),
+          Text('Agregar', style: TextStyle(color: Colors.white)),
+        ],
+      ),
+    ),
+    confirmDismiss: (direction) async {
+      // ✅ CONFIRMACIÓN ANTES DE AGREGAR
+      return await _mostrarConfirmacionAgregar(articulo);
+    },
+    onDismissed: (direction) {
+      // ✅ AGREGAR EL PRODUCTO
+      _agregarArticulo(articulo);
+      
+      // ✅ MOSTRAR FEEDBACK
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('✅ ${articulo.nombre} agregado' + 
+                       (articulo.tieneImpuestos ? ' (con ITBIS)' : '')),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    },
+    dismissThresholds: const {
+      DismissDirection.startToEnd: 0.4,
+    },
+    movementDuration: const Duration(milliseconds: 300),
+    child: _buildProductContent(articulo, cantidad, yaAgregado, product, precioConImpuesto, tieneImpuestos),
+  );
+}
 
-    return Dismissible(
-       key: Key('product_${articulo.id}_${product.hashCode}'), 
-      direction: DismissDirection.startToEnd,
-      background: Container(
-        color: Colors.green,
-        alignment: Alignment.centerLeft,
-        padding: const EdgeInsets.only(left: 20),
-        child: const Row(
-          children: [
-            Icon(Icons.add, color: Colors.white),
-            SizedBox(width: 8),
-            Text('Agregar', style: TextStyle(color: Colors.white)),
-          ],
+// ✅ MÉTODO SEPARADO PARA EL CONTENIDO DEL PRODUCTO
+// ✅ MÉTODO SEPARADO PARA EL CONTENIDO DEL PRODUCTO (ACTUALIZADO)
+Widget _buildProductContent(
+  ArticuloItem articulo, 
+  int cantidad, 
+  bool yaAgregado, 
+  Product product, 
+  double precioConImpuesto, 
+  bool tieneImpuestos
+) {
+  return Container(
+    constraints: const BoxConstraints(minHeight: 100),
+    child: ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      leading: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: (product.typeColor).withOpacity(0.2),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(
+          _getProductIcon(product.type),
+          color: product.typeColor,
+          size: 24,
         ),
       ),
-      onDismissed: (direction) {
-        _agregarArticulo(articulo);
-      },
-      child: Container(
-        constraints: const BoxConstraints(minHeight: 100),
-        child: ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          leading: Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: (product.typeColor).withOpacity(0.2),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(
-              _getProductIcon(product.type),
-              color: product.typeColor,
-              size: 24,
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(
+              product.name,
+              style: TextStyle(
+                fontWeight: FontWeight.w500, 
+                fontSize: 15,
+                color: yaAgregado ? Colors.green[800] : Colors.black,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
-          title: Row(
+        ],
+      ),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Información básica
+          Row(
             children: [
+              Icon(Icons.category, size: 12, color: Colors.grey),
+              SizedBox(width: 4),
               Expanded(
                 child: Text(
-                  product.name,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w500, 
-                    fontSize: 15,
-                    color: yaAgregado ? Colors.green[800] : Colors.black,
-                  ),
-                  maxLines: 1,
+                  product.categoryName ?? 'Sin categoría',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
           ),
-          subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          SizedBox(height: 2),
+          
+          // Códigos
+          Wrap(
+            spacing: 8,
+            runSpacing: 2,
             children: [
-              // Información básica
-              Row(
-                children: [
-                  Icon(Icons.category, size: 12, color: Colors.grey),
-                  SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      product.categoryName ?? 'Sin categoría',
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-              SizedBox(height: 2),
-              
-              // Códigos
-              Wrap(
-                spacing: 8,
-                runSpacing: 2,
-                children: [
-                  if (product.defaultCode != null && product.defaultCode!.isNotEmpty)
-                    _buildInfoChip('Ref: ${product.defaultCode!}', Icons.code),
-                ],
-              ),
-              
-              // Información de disponibilidad e impuestos
-              SizedBox(height: 4),
-              Row(
-                children: [
-                  Icon(Icons.inventory, size: 12, color: Colors.blue),
-                  SizedBox(width: 4),
-                  Text(
-                    product.isSellable ? "Disponible" : "No vendible",
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: product.isSellable ? Colors.blue : Colors.grey,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  SizedBox(width: 8),
-                  if (tieneImpuestos)
-                    Container(
-                      padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.orange.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        "+18% IVA",
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: Colors.orange,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
+              if (product.defaultCode != null && product.defaultCode!.isNotEmpty)
+                _buildInfoChip('Ref: ${product.defaultCode!}', Icons.code),
+              if (product.barcode != null && product.barcode!.isNotEmpty)
+                _buildInfoChip('Cód: ${product.barcode!}', Icons.qr_code),
             ],
           ),
-          trailing: SizedBox(
-            width: 90,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  product.isSellable ? "Disponible" : "No vendible",
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: product.isSellable ? Colors.green[700] : Colors.grey,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  textAlign: TextAlign.end,
-                ),
-                SizedBox(height: 4),
-                if (yaAgregado)
-                  _buildQuantitySelector(articulo, cantidad)
-                else
-                  Column(
-                    children: [
-                      Text(
-                        "\$${precioConImpuesto.toStringAsFixed(2)}",
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                          color: Colors.green,
-                        ),
-                      ),
-                      if (tieneImpuestos)
-                        Text(
-                          "inc. impuesto",
-                          style: TextStyle(
-                            fontSize: 8,
-                            color: Colors.green[600],
-                          ),
-                        ),
-                    ],
-                  ),
-              ],
-            ),
-          ),
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => ProductDetailScreen(
-                  articulo: articulo,
-                  product: product,
-                  cantidadInicial: cantidad,
-                  onAgregarArticulo: (articulo, cantidad) {
-                    _agregarArticulo(articulo, cantidad);
-                  },
+          
+          // Información de disponibilidad e impuestos
+          SizedBox(height: 4),
+          Row(
+            children: [
+              Icon(Icons.inventory, size: 12, color: Colors.blue),
+              SizedBox(width: 4),
+              Text(
+                product.isSellable ? "Disponible" : "No vendible",
+                style: TextStyle(
+                  fontSize: 12,
+                  color: product.isSellable ? Colors.blue : Colors.grey,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
-            );
-          },
+              SizedBox(width: 8),
+              if (tieneImpuestos)
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    "+18% ITBIS",
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.orange,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+      trailing: SizedBox(
+        width: 90,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              product.isSellable ? "Disponible" : "No vendible",
+              style: TextStyle(
+                fontSize: 10,
+                color: product.isSellable ? Colors.green[700] : Colors.grey,
+                fontWeight: FontWeight.w500,
+              ),
+              textAlign: TextAlign.end,
+            ),
+            SizedBox(height: 4),
+            if (yaAgregado)
+              _buildQuantitySelector(articulo, cantidad)
+            else
+              Column(
+                children: [
+                  Text(
+                    "\$${articulo.precio.toStringAsFixed(2)}", // ✅ USAR PRECIO DEL ARTÍCULO (ya incluye impuestos)
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: Colors.green,
+                    ),
+                  ),
+                  if (articulo.tieneImpuestos) // ✅ VERIFICAR EN EL ARTÍCULO
+                    Text(
+                      "inc. impuesto",
+                      style: TextStyle(
+                        fontSize: 8,
+                        color: Colors.green[600],
+                      ),
+                    ),
+                ],
+              ),
+          ],
         ),
       ),
-    );
-  }
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ProductDetailScreen(
+              articulo: articulo,
+              product: product,
+              cantidadInicial: cantidad,
+              onAgregarArticulo: (articulo, cantidad) {
+                _agregarArticulo(articulo, cantidad);
+              },
+              esParaVenta: widget.esParaVenta, // ✅ Pasar el flag
+            ),
+          ),
+        );
+      },
+    ),
+  );
 
+}
+
+// ✅ MÉTODO PARA CONFIRMAR AGREGAR PRODUCTO
+Future<bool> _mostrarConfirmacionAgregar(ArticuloItem articulo) async {
+  return await showDialog<bool>(
+    context: context,
+    builder: (BuildContext context) {
+      return AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.add_shopping_cart, color: Colors.green),
+            SizedBox(width: 8),
+            Text("Agregar producto"),
+          ],
+        ),
+        content: Text("¿Agregar \"${articulo.nombre}\" a la orden?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text("Cancelar"),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+            ),
+            child: const Text("Agregar", style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      );
+    },
+  ) ?? false;
+}
 
 // ✅ Widget para chips de información
 Widget _buildInfoChip(String text, IconData icon) {
@@ -918,28 +1021,6 @@ IconData _getProductIcon(String type) {
   }
 }
 
-
-  // Widget _buildLoadMoreButton() {
-  //   return Padding(
-  //     padding: const EdgeInsets.symmetric(vertical: 16),
-  //     child: Center(
-  //       child: _isLoadingMore
-  //           ? const CircularProgressIndicator(strokeWidth: 2)
-  //           : OutlinedButton(
-  //               onPressed: _loadMoreItems,
-  //               style: OutlinedButton.styleFrom(
-  //                 shape: RoundedRectangleBorder(
-  //                   borderRadius: BorderRadius.circular(20),
-  //                 ),
-  //               ),
-  //               child: Text(
-  //                 "Cargar más (${articulosFiltrados.length - _visibleItems} restantes)",
-  //                 style: const TextStyle(fontSize: 12),
-  //               ),
-  //             ),
-  //     ),
-  //   );
-  // }
 }
 
 /// ✅ Pantalla de detalle de producto  
@@ -948,6 +1029,7 @@ class ProductDetailScreen extends StatefulWidget {
   final Product product;
   final int cantidadInicial;
   final Function(ArticuloItem, int) onAgregarArticulo;
+  final bool esParaVenta;
 
   const ProductDetailScreen({
     super.key,
@@ -955,6 +1037,7 @@ class ProductDetailScreen extends StatefulWidget {
     required this.product,
     this.cantidadInicial = 0,
     required this.onAgregarArticulo,
+    this.esParaVenta = true, 
   });
 
   @override
@@ -963,52 +1046,77 @@ class ProductDetailScreen extends StatefulWidget {
 
 class _ProductDetailScreenState extends State<ProductDetailScreen> {
   int _cantidad = 1;
-  late ArticuloItem _currentArticulo;
-  late Product _currentProduct;
+   late ArticuloItem _currentArticulo = widget.articulo; 
+  late Product _currentProduct = widget.product;  
 
   @override
   void initState() {
     super.initState();
     _cantidad = widget.cantidadInicial > 0 ? widget.cantidadInicial : 1;
-
+    _currentArticulo = widget.articulo;
+    _currentProduct = widget.product;
     _actualizarProductoEnTiempoReal(); 
   }
- //  CALCULAR PRECIO CON IMPUESTO
-  double get _precioConImpuesto {
-    final tieneImpuestos = widget.product.taxesIds != null && widget.product.taxesIds!.isNotEmpty;
-    return tieneImpuestos ? 
-        widget.articulo.precio * 1.18 : widget.articulo.precio;
+  ArticuloItem get articuloActual => _currentArticulo ?? widget.articulo;
+  Product get productActual => _currentProduct ?? widget.product;
+
+  double get _precioFinalParaVenta {
+    if (widget.esParaVenta) {
+      // ✅ PARA VENTAS: Usar el precio del artículo que YA tiene impuestos aplicados
+        return _currentArticulo.precio; 
+    } else {
+      // ✅ PARA COMPRAS: Usar precio sin impuestos
+      return _currentProduct.listPrice;
+    }
   }
 
-  //  VERIFICAR SI TIENE IMPUESTOS
   bool get _tieneImpuestos {
-    return widget.product.taxesIds != null && widget.product.taxesIds!.isNotEmpty;
+    // Verificar si debe mostrar impuestos (solo para ventas)
+    if (!widget.esParaVenta) return false;
+    
+    return widget.articulo.tieneImpuestos ?? 
+           (widget.product.taxesIds != null && widget.product.taxesIds!.isNotEmpty);
   }
 
+
+  (double precioBase, double montoImpuesto, double precioFinal) _calcularDesglosePrecio() {
+    if (!widget.esParaVenta) {
+      // Para compras: no hay impuestos
+      return (_precioFinalParaVenta, 0.0, _precioFinalParaVenta);
+    }
+    
+     final precioArticulo = articuloActual.precio; // Este es el precio FINAL con impuestos
+    
+    if (_tieneImpuestos) {
+      // Si tiene impuestos, calcular el precio base
+      final precioBase = precioArticulo / 1.18;
+      final montoImpuesto = precioArticulo - precioBase;
+      
+      return (precioBase, montoImpuesto, precioArticulo);
+    } else {
+      // Si no tiene impuestos, el precio es el mismo
+      return (precioArticulo, 0.0, precioArticulo);
+    }
+  }
 
 Future<void> _actualizarProductoEnTiempoReal() async {
   try {
     final odooService = OdooServiceEnhanced(
-      baseUrl: 'https://solutions.tailorw.net',
-      dbName: 'pointsales_prodv18',
+      baseUrl: ApiConfig.baseUrl,
+      dbName: 'pointsales-v18',
     );
     
-    await odooService.login('admin', 'admin');
+    await odooService.login(ApiConfig.defaultUsername, ApiConfig.defaultPassword);
     final productService = OdooProductService(odooService);
     
     final productoActualizado = await productService.getProductDetails(widget.product.id);
     
     if (productoActualizado != null && mounted) {
-      setState(() {
-        // ✅ USAR COPYWITH PARA CREAR NUEVAS INSTANCIAS ACTUALIZADAS
-        _currentArticulo = widget.articulo.copyWithProduct(productoActualizado);
-        _currentProduct = widget.product.copyWith(
-          name: productoActualizado.name,
-          listPrice: productoActualizado.listPrice,
-          categoryName: productoActualizado.categoryName,
-          description: productoActualizado.description,
-        );
-      });
+        setState(() {
+          // ✅ USAR COPYWITH PARA CREAR NUEVAS INSTANCIAS ACTUALIZADAS
+          _currentArticulo = widget.articulo.copyWithProduct(productoActualizado);
+          _currentProduct = productoActualizado;
+        });
       
       print('✅ Producto actualizado en detalle: ${productoActualizado.name} - \$${productoActualizado.listPrice}');
     }
@@ -1020,6 +1128,8 @@ Future<void> _actualizarProductoEnTiempoReal() async {
 
   @override
   Widget build(BuildContext context) {
+     final articulo = articuloActual;
+    final product = productActual;
     return Scaffold(
       appBar: AppBar(
         title: const Text("Detalle del Producto"),
@@ -1090,44 +1200,6 @@ Future<void> _actualizarProductoEnTiempoReal() async {
                   _buildPricingSection(),
                   const SizedBox(height: 20),
                  
-                  // Precio de venta
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.green[50],
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.green[100]!),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.sell, color: Colors.green[700], size: 24),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                "Precio de Venta",
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.green[700],
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              Text(
-                                "\$${widget.articulo.precio.toStringAsFixed(2)}",
-                                style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.green,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
                   const SizedBox(height: 20),
                  
                  // Selector de cantidad
@@ -1258,8 +1330,27 @@ Future<void> _actualizarProductoEnTiempoReal() async {
     );
   }
 
-    // ✅ NUEVA SECCIÓN DE PRECIOS CON DETALLE DE IMPUESTOS
-  Widget _buildPricingSection() {
+// ✅ SECCIÓN DE PRECIOS MEJORADA CON DETALLE DE IMPUESTOS (CORREGIDO)
+Widget _buildPricingSection() {
+    print('🔄 _buildPricingSection llamado:');
+  print('   widget.articulo.precio: \$${widget.articulo.precio}');
+  print('   widget.articulo.tieneImpuestos: ${widget.articulo.tieneImpuestos}');
+  print('   widget.product.taxesIds: ${widget.product.taxesIds}');
+  print('   _tieneImpuestos: ${_tieneImpuestos}');
+  final tieneImpuestos = _tieneImpuestos;
+  
+  if (tieneImpuestos) {
+    // ✅ CASO 1: PRODUCTO CON IMPUESTOS
+    // Asumimos que widget.articulo.precio es el precio FINAL con ITBIS incluido
+    final precioFinal = widget.articulo.precio; // $174.99 (ejemplo)
+    final precioBase = precioFinal / 1.18; // $148.30
+    final montoImpuesto = precioFinal - precioBase; // $26.69
+    
+    print('💰 Producto CON impuestos:');
+    print('   Precio final: \$${precioFinal.toStringAsFixed(2)}');
+    print('   Precio base: \$${precioBase.toStringAsFixed(2)}');
+    print('   ITBIS 18%: \$${montoImpuesto.toStringAsFixed(2)}');
+    
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1287,78 +1378,213 @@ Future<void> _actualizarProductoEnTiempoReal() async {
           ),
           const SizedBox(height: 12),
           
-          // Precio base
+          // Desglose de precios CON impuestos
           _buildPriceRow(
-            label: "Precio base:",
-            value: "\$${widget.articulo.precio.toStringAsFixed(2)}",
-            description: ""
+            label: "Precio sin ITBIS:",
+            value: "\$${precioBase.toStringAsFixed(2)}",
+            description: "Precio base sin impuestos"
           ),
           
-          // Impuesto si aplica
-          if (_tieneImpuestos) ...[
-            const SizedBox(height: 8),
-            _buildPriceRow(
-              label: "Impuesto IVA (18%):",
-              value: "\$${(widget.articulo.precio * 0.18).toStringAsFixed(2)}",
-              description: "",
-              valueColor: Colors.orange,
+          const SizedBox(height: 8),
+          _buildPriceRow(
+            label: "Impuesto ITBIS (18%):",
+            value: "\$${montoImpuesto.toStringAsFixed(2)}",
+            description: "Aplicado sobre el precio base",
+            valueColor: Colors.orange,
+          ),
+          const SizedBox(height: 8),
+          _buildPriceRow(
+            label: "Precio final (con ITBIS):",
+            value: "\$${precioFinal.toStringAsFixed(2)}",
+            description: "Incluye 18% ITBIS",
+            valueColor: Colors.green,
+            isBold: true,
+          ),
+          
+          // Precio de venta
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue[50],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.blue[100]!),
             ),
-            const SizedBox(height: 8),
-            _buildPriceRow(
-              label: "Precio final:",
-              value: "\$${_precioConImpuesto.toStringAsFixed(2)}",
-              description: "",
-              valueColor: Colors.green,
-              isBold: true,
+            child: Row(
+              children: [
+                Icon(Icons.sell, color: Colors.blue[700], size: 24),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Precio de Venta",
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.blue[700],
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        "\$${precioFinal.toStringAsFixed(2)}", // ✅ MUESTRA EL PRECIO FINAL
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green,
+                        ),
+                      ),
+                      Text(
+                        "Incluye 18% ITBIS",
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.blue[600],
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-          ] else ...[
-            const SizedBox(height: 8),
-            _buildPriceRow(
-              label: "Impuestos:",
-              value: "Exento",
-              description: "Producto no sujeto a impuestos",
-              valueColor: Colors.grey,
-            ),
-            const SizedBox(height: 8),
-            _buildPriceRow(
-              label: "Precio final:",
-              value: "\$${widget.articulo.precio.toStringAsFixed(2)}",
-              description: "Mismo precio base (sin impuestos)",
-              valueColor: Colors.green,
-              isBold: true,
-            ),
-          ],
+          ),
           
           // Nota informativa sobre impuestos
-          if (_tieneImpuestos) 
-            Container(
-              margin: const EdgeInsets.only(top: 12),
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.orange[50],
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.orange[100]!),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.info, color: Colors.orange[700], size: 16),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      "Este producto incluye IVA del 18%. El precio final ya incluye el impuesto.",
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.orange[800],
-                      ),
+          Container(
+            margin: const EdgeInsets.only(top: 12),
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.orange[50],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.orange[100]!),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.info, color: Colors.orange[700], size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    "Este producto incluye ITBIS del 18%. El precio de venta ya incluye el impuesto.",
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.orange[800],
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
+          ),
+        ],
+      ),
+    );
+  } else {
+    // ✅ CASO 2: PRODUCTO SIN IMPUESTOS
+    final precioFinal = widget.articulo.precio; // $148.30 (ejemplo)
+    final precioBase = widget.product.listPrice;
+    
+    print('💰 Producto SIN impuestos:');
+    print('   Precio final: \$${precioFinal.toStringAsFixed(2)}');
+    
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.green[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.green[100]!),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Título de la sección
+          Row(
+            children: [
+              Icon(Icons.attach_money, color: Colors.green[700], size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                "Información de Precios",
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.green,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          
+          // Desglose de precios SIN impuestos
+          _buildPriceRow(
+            label: "Precio base:",
+            value: "\$${precioFinal.toStringAsFixed(2)}"
+          ),
+          
+          // const SizedBox(height: 8),
+          // _buildPriceRow(
+          //   label: "Impuestos:",
+          //   value: "Exento",
+          //   description: "Producto no sujeto a impuestos",
+          //   valueColor: Colors.grey,
+          // ),
+          const SizedBox(height: 8),
+          _buildPriceRow(
+            label: "Precio final:",
+            value: "\$${precioFinal.toStringAsFixed(2)}",
+            valueColor: Colors.green,
+            isBold: true,
+          ),
+          
+          // Precio de venta
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue[50],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.blue[100]!),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.sell, color: Colors.blue[700], size: 24),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Precio de Venta",
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.blue[700],
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        "\$${precioFinal.toStringAsFixed(2)}", // ✅ MUESTRA EL PRECIO FINAL
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green,
+                        ),
+                      ),
+                      Text(
+                        "",
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.blue[600],
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
+}
 
   // ✅ FILA DE INFORMACIÓN
   Widget _buildInfoRow({
@@ -1484,7 +1710,7 @@ Future<void> _actualizarProductoEnTiempoReal() async {
       },
       icon: const Icon(Icons.shopping_bag),
       label: Text(
-        widget.cantidadInicial > 0 ? "Actualizar en orden" : "Agregar artículo",
+        widget.cantidadInicial > 0 ? "Actualizar en orden" : "Guardar Orden",
         style: const TextStyle(fontSize: 16),
       ),
       style: ElevatedButton.styleFrom(

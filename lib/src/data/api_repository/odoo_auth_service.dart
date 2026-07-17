@@ -22,7 +22,7 @@ class OdooAuthService {
           "service": "common",
           "method": "login",
           "args": [
-            ApiConfig.dbName, // pointsales_prodv18
+            ApiConfig.dbName, // pointsales-v18
             username,         // admin
             password          // admin
           ]

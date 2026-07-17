@@ -55,14 +55,37 @@ class _ClientScreenState extends State<ClientScreen> {
   }
 
  Future<void> _loadCustomers() async {
+  // 1️⃣ ESTRATEGIA: Stale-While-Revalidate
+  // Primero cargamos lo que hay en caché instantáneamente para que el usuario no espere.
+  await _loadCustomersFromCache(silent: true);
+
+  // 2️⃣ Luego verificamos internet y actualizamos 'en segundo plano'
   final tieneInternet = await ConnectivityService.hasInternet();
   
   if (tieneInternet) {
     // ✅ CON INTERNET: Cargar de Odoo + actualizar caché
     await _loadCustomersFromOdoo();
   } else {
-    // 🔴 SIN INTERNET: Usar caché local
-    await _loadCustomersFromCache();
+    // 🔴 SIN INTERNET: Notificar al usuario que está viendo datos offline
+    // Como ya cargamos los datos en el paso 1 (silent=true), solo mostramos el aviso si hay datos.
+    if (customerList.isNotEmpty && mounted) {
+       ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.wifi_off, size: 20, color: Colors.white),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text('Modo Offline: Visualizando ${customerList.length} clientes'),
+                ),
+              ],
+            ),
+            duration: Duration(seconds: 4),
+            backgroundColor: Colors.orange[800],
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+    }
   }
 }
 
@@ -75,11 +98,15 @@ Future<void> _loadCustomersFromOdoo() async {
       dbName: ApiConfig.dbName,
     );
     
-    bool isAuthenticated = await odooService.login('admin', 'admin');
+    // ✅ USAR CREDENCIALES DEL CONFIG
+    bool isAuthenticated = await odooService.login(
+      ApiConfig.defaultUsername, 
+      ApiConfig.defaultPassword
+    );
     
     if (isAuthenticated) {
       final customerService = OdooCustomerService(odooService);
-      final allCustomers = await customerService.getCustomers(limit: 100);
+      final allCustomers = await customerService.getCustomers(limit: 10000);
       
       // ✅ GUARDAR EN CACHÉ
       await CacheService.saveCustomers(allCustomers);
@@ -92,6 +119,7 @@ Future<void> _loadCustomersFromOdoo() async {
           return _AZCustomer(customer: customer, name: customer.name);
         }).toList();
         
+        _prepareAzData(azCustomerList);
         filteredAzCustomers = List.from(azCustomerList);
         _isLoading = false;
       });
@@ -107,13 +135,13 @@ Future<void> _loadCustomersFromOdoo() async {
   } catch (e) {
     print('❌ Error cargando clientes de Odoo: $e');
     // Fallback: intentar cargar del caché
-    await _loadCustomersFromCache();
+    await _loadCustomersFromCache(silent: false);
   }
 }
 
 
-Future<void> _loadCustomersFromCache() async {
-  print('🔴 [DEBUG] _loadCustomersFromCache INICIADO');
+Future<void> _loadCustomersFromCache({bool silent = false}) async {
+  print('🔴 [DEBUG] _loadCustomersFromCache INICIADO (Silent: $silent)');
   
   try {
     print('${_getTimestamp()} 🔴 Modo Offline - Cargando clientes del caché...');
@@ -125,7 +153,7 @@ Future<void> _loadCustomersFromCache() async {
     if (clientesCache.isNotEmpty) {
       // ✅ SNACKBAR VISUAL
       print('🔴 [DEBUG] Intentando mostrar SnackBar...');
-      if (mounted) {
+      if (mounted && !silent) { // ✅ Solo mostrar SnackBar si no es 'silent'
         print('🔴 [DEBUG] Widget está mounted, mostrando SnackBar');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -145,7 +173,7 @@ Future<void> _loadCustomersFromCache() async {
         );
         print('🔴 [DEBUG] SnackBar mostrado exitosamente');
       } else {
-        print('🔴 [DEBUG] Widget NO está mounted, no se puede mostrar SnackBar');
+        print('🔴 [DEBUG] Widget NO está mounted o es silent mode');
       }
       
       // ✅ ACTUALIZAR TODAS LAS LISTAS
@@ -158,6 +186,7 @@ Future<void> _loadCustomersFromCache() async {
           return _AZCustomer(customer: customer, name: customer.name);
         }).toList();
         
+        _prepareAzData(azCustomerList);
         filteredAzCustomers = List.from(azCustomerList);
         _isLoading = false;
       });
@@ -200,9 +229,26 @@ String _getTimestamp() {
       }).toList();
       
       setState(() {
+        _prepareAzData(filtered);
         filteredAzCustomers = filtered;
       });
     }
+  }
+
+  void _prepareAzData(List<_AZCustomer> list) {
+    for (var item in list) {
+      if (item.name.isEmpty) continue;
+      String firstLetter = item.name[0].toUpperCase();
+      // Remover acentos básicos para agrupar mejor
+      if (RegExp(r'[ÁÀÂÄ]').hasMatch(firstLetter)) firstLetter = 'A';
+      if (RegExp(r'[ÉÈÊË]').hasMatch(firstLetter)) firstLetter = 'E';
+      if (RegExp(r'[ÍÌÎÏ]').hasMatch(firstLetter)) firstLetter = 'I';
+      if (RegExp(r'[ÓÒÔÖ]').hasMatch(firstLetter)) firstLetter = 'O';
+      if (RegExp(r'[ÚÙÛÜ]').hasMatch(firstLetter)) firstLetter = 'U';
+      if (!RegExp(r'[A-Z]').hasMatch(firstLetter)) firstLetter = '#';
+    }
+    SuspensionUtil.sortListBySuspensionTag(list);
+    SuspensionUtil.setShowSuspensionStatus(list);
   }
 
   @override
@@ -210,9 +256,7 @@ String _getTimestamp() {
     return Scaffold(
       appBar: CustomAppBar(
         title: '',
-        onOrdenTerminada: () {
-          setState(() {});
-        },
+
       ),
       drawer: AppDrawer(
         onItemTapped: (index) {
@@ -225,7 +269,7 @@ String _getTimestamp() {
         },
       ),
       body: Padding(
-        padding: const EdgeInsets.all(18.0),
+        padding: const EdgeInsets.only(top: 18.0, left: 18.0, bottom: 18.0, right: 8.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -448,15 +492,10 @@ String _getTimestamp() {
           ],
         ),
       ),
-      bottomNavigationBar: CustomCircleNavBar(
-        selectedIndex: _selectedIndex,
-        onItemTapped: _onItemTapped,
-      ),
     );
   }
 }
 
-// ✅ Cambiar _AZUser por _AZCustomer
 class _AZCustomer extends ISuspensionBean {
   final Customer customer;
   final String name;
@@ -466,7 +505,14 @@ class _AZCustomer extends ISuspensionBean {
   @override
   String getSuspensionTag() {
     if (name.isEmpty) return "#";
-    return name[0].toUpperCase();
+    String firstLetter = name[0].toUpperCase();
+    if (RegExp(r'[ÁÀÂÄ]').hasMatch(firstLetter)) return 'A';
+    if (RegExp(r'[ÉÈÊË]').hasMatch(firstLetter)) return 'E';
+    if (RegExp(r'[ÍÌÎÏ]').hasMatch(firstLetter)) return 'I';
+    if (RegExp(r'[ÓÒÔÖ]').hasMatch(firstLetter)) return 'O';
+    if (RegExp(r'[ÚÙÛÜ]').hasMatch(firstLetter)) return 'U';
+    if (RegExp(r'[A-Z]').hasMatch(firstLetter)) return firstLetter;
+    return "#";
   }
 }
 class CustomerInfoPage extends StatelessWidget {

@@ -1,23 +1,23 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+//import 'package:provider/provider.dart';
 import 'package:azlistview/azlistview.dart';
 import 'package:ecomerce_app/src/config/api_config.dart';
 import 'package:ecomerce_app/src/data/api_repository/odoo_service_enhanced.dart';
 import 'package:ecomerce_app/src/data/api_repository/odoo_customer_service.dart';
 import 'package:ecomerce_app/src/domain/models/customer_model.dart';
 import 'package:ecomerce_app/src/presentation/components/custon_appbar/appDrawer.dart';
-import 'package:ecomerce_app/src/presentation/components/custon_appbar/custon_appbar.dart';
+//import 'package:ecomerce_app/src/presentation/components/custon_appbar/custon_appbar.dart';
 import 'package:ecomerce_app/src/presentation/components/botton_navigation_bar/circle_navbar.dart';
-import 'package:ecomerce_app/src/presentation/components/custon_search/custon_search_user.dart';
-import 'package:ecomerce_app/src/domain/models/proveedores.dart';
+//import 'package:ecomerce_app/src/presentation/components/custon_search/custon_search_user.dart';
+//import 'package:ecomerce_app/src/domain/models/proveedores.dart';
 import 'package:ecomerce_app/src/data/api_repository/odooProveedorService.dart';
-
 import 'package:ecomerce_app/src/presentation/screens/user/home_screen.dart';
-import 'package:ecomerce_app/src/presentation/screens/user/orden_de_compra.dart';
+//import 'package:ecomerce_app/src/presentation/screens/user/orden_de_compra.dart';
 import 'package:ecomerce_app/src/presentation/screens/user/orden.dart';
-import 'package:ecomerce_app/src/services/service_company.dart';
+//import 'package:ecomerce_app/src/services/service_company.dart';
+//import 'package:ecomerce_app/src/presentation/screens/product/product_list.dart';
 
-import 'package:ecomerce_app/src/presentation/screens/product/product_list.dart';
+
 class ProveedoresScreen extends StatefulWidget {
   final Function(Customer) onSupplierPageNavigate;
 
@@ -75,13 +75,33 @@ class _ProveedoresScreenState extends State<ProveedoresScreen> {
         dbName: ApiConfig.dbName,
       );
       
-      bool isAuthenticated = await odooService.login('admin', 'admin');
+      // ✅ USAR CREDENCIALES CORRECTAS
+      bool isAuthenticated = await odooService.login(
+        ApiConfig.defaultUsername, 
+        ApiConfig.defaultPassword
+      );
       
       if (isAuthenticated) {
-        final customerService = OdooCustomerService(odooService);
-        // ✅ FILTRAR SOLO EMPRESAS (isCompany = true)
-        final allCustomers = await customerService.getCustomers(limit: 100);
-        final companies = allCustomers.where((customer) => customer.isCompany).toList();
+        // ✅ USAR SERVICIO ESPECIALIZADO DE PROVEEDORES
+        final proveedorService = OdooProveedorService(odooService);
+        
+        // Obtiene directamente solo empresas (is_company=true) desde el servidor
+        final companiesResults = await proveedorService.getProveedores(limit: 100);
+        
+        // Convertir Proveedor -> Customer (son compatibles/similares para la UI actual)
+        final companies = companiesResults.map((p) => Customer(
+          id: p.id,
+          name: p.name,
+          email: p.email,
+          phone: p.phone,
+          mobile: p.mobile,
+          street: p.street,
+          city: p.city,
+          zip: p.zip,
+          isCompany: p.isCompany,
+          vat: p.vat,
+          commercialCompanyName: null, 
+        )).toList();
         
         // ✅ GUARDAR EN CACHE
         _cachedSuppliers = companies;
@@ -169,10 +189,6 @@ class _ProveedoresScreenState extends State<ProveedoresScreen> {
         },
       ),
       body: _buildBody(),
-      bottomNavigationBar: CustomCircleNavBar(
-        selectedIndex: _selectedIndex,
-        onItemTapped: _onItemTapped,
-      ),
     );
   }
 

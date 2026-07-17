@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:ecomerce_app/src/domain/models/users_model.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ecomerce_app/src/data/api_repository/databaseHelper.dart';
-import 'package:ecomerce_app/src/data/api_repository/odoo_auth_service.dart'; // ✅ IMPORT CORRECTO
+import 'package:ecomerce_app/src/data/api_repository/odoo_auth_service.dart'; 
+import 'package:ecomerce_app/src/services/service_company.dart';
 
 class UsuarioProvider with ChangeNotifier {
   List<User> usuarios = [];
@@ -39,6 +40,10 @@ class UsuarioProvider with ChangeNotifier {
         
         userId = result['userId'];
         isAuthenticated = true;
+        
+        final prefs = await SharedPreferences.getInstance();
+        if (userId != null) await prefs.setInt('current_uid', userId!);
+        await prefs.setString('session_password', password);
         
         print('✅ Login Odoo exitoso - User ID: $userId');
         print('🏢 Empresa: $companyName');
@@ -208,25 +213,43 @@ class UsuarioProvider with ChangeNotifier {
   }
 
   // ✅ Método para cerrar sesión completo
-  Future<void> logout() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('email');
-    await prefs.remove('username');
-    await prefs.remove('accessToken');
-    await prefs.remove('password');
-    await prefs.remove('companyName'); // ✅ Eliminar empresa
-    await prefs.remove('userName');    // ✅ Eliminar nombre usuario
-    
-    email = "";
-    nombre = "";
-    password = "";
-    accessToken = null;
-    userId = null;
-    companyName = null; // ✅ Limpiar empresa
-    userName = null;    // ✅ Limpiar nombre usuario
-    isAuthenticated = false;
-    
-    notifyListeners();
-    print('✅ Sesión cerrada correctamente');
+  // En UsuarioProvider, mejora el método logout:
+Future<void> logout() async {
+  final prefs = await SharedPreferences.getInstance();
+  
+  // Limpiar SharedPreferences
+  await prefs.remove('email');
+  await prefs.remove('username');
+  await prefs.remove('accessToken');
+  await prefs.remove('password');
+  await prefs.remove('companyName');
+  await prefs.remove('userName');
+  await prefs.remove('selected_company_id');
+  await prefs.remove('selected_company_name');
+  await prefs.remove('current_uid');
+  await prefs.remove('session_password');
+  // Eliminamos odoo_domain y odoo_database? Si el usuario quiere cambiar de servidor, sí.
+  // Dejémoslos por si quiere reconectarse al mismo, la pantalla de Onboarding ya los tiene como sugeridos.
+  
+  // Limpiar propiedades del provider
+  email = "";
+  nombre = "";
+  password = "";
+  accessToken = null;
+  userId = null;
+  companyName = null;
+  userName = null;
+  isAuthenticated = false;
+  
+  // ✅ OPCIONAL: También limpiar CompanyService
+  try {
+    final companyService = CompanyService();
+    await companyService.clearSessionData();
+  } catch (e) {
+    print("Error limpiando CompanyService: $e");
   }
+  
+  notifyListeners();
+  print('✅ Sesión cerrada correctamente - UsuarioProvider');
+}
 }
